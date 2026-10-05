@@ -119,7 +119,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.7')
+def health():return jsonify(ok=True,service='cebimde',version='2.8')
 
 @app.get('/api/product')
 def product():
@@ -134,8 +134,12 @@ def product():
         sku_match=re.search(r'(HBCV[0-9A-Z]+)',target,re.I) if host in ('hepsiburada.com','www.hepsiburada.com') else None
         sku=sku_match.group(1).upper() if sku_match else None
         hb=None
-        if host in ('hepsiburada.com','www.hepsiburada.com') and sku:
+        if host in ('hepsiburada.com','www.hepsiburada.com'):
+            # Reef accepts the original product URL too. Some HB URLs expose a
+            # product code that is not the same SKU field returned in nested data.
             hb=reef_hepsiburada(sku,target)
+            if not hb and sku:
+                hb=reef_hepsiburada(None,target)
             if hb and not title:title=hb.get('title')
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
         offers=matched_offers(title)
