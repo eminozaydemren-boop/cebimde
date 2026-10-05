@@ -66,7 +66,7 @@ def matched_offers(title):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.1')
+def health():return jsonify(ok=True,service='cebimde',version='2.2')
 
 @app.get('/api/product')
 def product():
