@@ -44,6 +44,40 @@ def strict_zbmini_l2(title):
     s=(title or '').lower().replace('-','').replace(' ','')
     return ('zbminil2' in s or ('zigbee' in s and 'minil2' in s)) and not any(x in s for x in ['2adet','2li','paket','r2'])
 
+def model_token(title):
+    s=(title or '').upper()
+    toks=re.findall(r'(?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*[0-9])[A-Z0-9-]{4,}',s)
+    bad={'1000V','600V','220V','90V'}
+    toks=[x for x in toks if x not in bad]
+    return max(toks,key=len) if toks else None
+
+def same_model(a,b):
+    ma,mb=model_token(a),model_token(b)
+    return bool(ma and mb and ma.replace('-','')==mb.replace('-',''))
+
+def discover_n11(title):
+    model=model_token(title)
+    if not model:return []
+    try:
+        u='https://www.n11.com/arama?q='+quote_plus(model)
+        r=requests.get(u,headers=HEADERS,timeout=6); r.raise_for_status()
+        # Search-result pages expose product links. Verify each candidate's
+        # Product JSON-LD before accepting its price.
+        links=re.findall(r'href=["\'](https://www\.n11\.com/urun/[^"\']+)["\']',r.text,re.I)
+        out=[]; seen=set()
+        for link in links[:8]:
+            link=html.unescape(link).split('?')[0]
+            if link in seen:continue
+            seen.add(link)
+            try:
+                rr=requests.get(link,headers=HEADERS,timeout=5); rr.raise_for_status()
+                p=extract_product(rr.text,link)
+                if p.get('price') and same_model(title,p.get('title')):
+                    out.append({'source':'n11','price':p['price'],'url':link,'title':p['title']})
+            except Exception:pass
+        return sorted(out,key=lambda x:x['price'])[:1]
+    except Exception:return []
+
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
@@ -102,17 +136,18 @@ def hepsiburada_public_price(title):
     return None
 
 def matched_offers(title):
-    if not strict_zbmini_l2(title): return []
-    sources=[
-      ('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi'),
-      ('n11','https://www.n11.com/urun/sonoff-zigbee-mini-l2-akilli-role-41386553')]
-    offers=[]
-    for source,url in sources:
-        try:
-            x=fetch_offer(url,source)
-            if x:offers.append(x)
-        except Exception: pass
-    return sorted(offers,key=lambda x:x['price'])
+    offers=discover_n11(title)
+    if strict_zbmini_l2(title):
+        sources=[('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi')]
+        for source,url in sources:
+            try:
+                x=fetch_offer(url,source)
+                if x:offers.append(x)
+            except Exception:pass
+    # Deduplicate source+URL and sort by verified price.
+    uniq={}
+    for x in offers:uniq[(x['source'],x['url'])]=x
+    return sorted(uniq.values(),key=lambda x:x['price'])
 
 @app.errorhandler(Exception)
 def unhandled(e):
@@ -122,7 +157,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.9')
+def health():return jsonify(ok=True,service='cebimde',version='3.0')
 
 @app.get('/api/product')
 def product():
