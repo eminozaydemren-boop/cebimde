@@ -45,7 +45,7 @@ def strict_zbmini_l2(title):
     return ('zbminil2' in s or ('zigbee' in s and 'minil2' in s)) and not any(x in s for x in ['2adet','2li','paket','r2'])
 
 def fetch_offer(url,source):
-    r=requests.get(url,headers=HEADERS,timeout=15); r.raise_for_status()
+    r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
     if not strict_zbmini_l2(p['title']) or not p['price']: return None
     return {'source':source,'price':p['price'],'url':url,'title':p['title']}
@@ -58,7 +58,7 @@ def reef_hepsiburada(sku, url):
             'https://api.reefapi.com/hepsiburada/v1/product/detail',
             headers={'x-api-key':key,'content-type':'application/json'},
             json={'sku':sku} if sku else {'url':url},
-            timeout=30)
+            timeout=8)
         r.raise_for_status(); j=r.json()
         if not j.get('ok'): return None
         d=j.get('data') or {}
@@ -86,7 +86,7 @@ def hepsiburada_public_price(title):
     # A price is accepted only beside an exact ZBMINI-L2 single-unit title.
     try:
         u='https://www.hepsiburada.com/ara?q='+quote_plus(title)
-        r=requests.get(u,headers=HEADERS,timeout=15); r.raise_for_status()
+        r=requests.get(u,headers=HEADERS,timeout=6); r.raise_for_status()
         text=html.unescape(re.sub(r'<[^>]+>',' ',r.text))
         text=re.sub(r'\\s+',' ',text)
         m=re.search(r'Sonoff\\s+ZigBee?\\s+Mini\\s+L2\\s+Nötrsüz\\s+Akıllı\\s+Röle.{0,900}?([0-9]{1,3}(?:\\.[0-9]{3})*,[0-9]{2})\\s*TL',text,re.I)
@@ -110,11 +110,15 @@ def matched_offers(title):
         except Exception: pass
     return sorted(offers,key=lambda x:x['price'])
 
+@app.errorhandler(Exception)
+def unhandled(e):
+    return jsonify(ok=False,error='Sunucu hatası. Fiyat uydurulmadı.'),500
+
 @app.get('/')
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.5')
+def health():return jsonify(ok=True,service='cebimde',version='2.6')
 
 @app.get('/api/product')
 def product():
@@ -124,7 +128,7 @@ def product():
         if p.scheme not in ('http','https') or host not in ALLOWED: raise ValueError('Desteklenmeyen bağlantı.')
         title=None; input_product={}
         try:
-            r=requests.get(target,headers=HEADERS,timeout=15); r.raise_for_status(); input_product=extract_product(r.text,target); title=input_product.get('title')
+            r=requests.get(target,headers=HEADERS,timeout=6); r.raise_for_status(); input_product=extract_product(r.text,target); title=input_product.get('title')
         except Exception: pass
         # Stable identity fallback for the known Hepsiburada SKU; this is identity only, never a price.
         if 'HBCV00004N35Q1' in target:
@@ -135,7 +139,7 @@ def product():
         if host in ('hepsiburada.com','www.hepsiburada.com') and not input_price:
             sku_match=re.search(r'(HBCV[0-9A-Z]+)',target,re.I)
             sku=sku_match.group(1).upper() if sku_match else None
-            hb=reef_hepsiburada(sku,target) or hepsiburada_public_price(title)
+            hb=reef_hepsiburada(sku,target)
             if hb:
                 input_price=hb['price']
                 offers.append(hb)
