@@ -125,6 +125,28 @@ def discover_trendyol(title):
         return sorted(out,key=lambda x:x['price'])[:1]
     except Exception:return []
 
+def discover_amazon(title):
+    key=os.getenv('REEF_API_KEY','').strip()
+    model=model_token(title)
+    if not key or not model:return []
+    try:
+        r=requests.post('https://api.reefapi.com/amazon/v1/search',
+            headers={'x-api-key':key,'content-type':'application/json'},
+            json={'query':model,'domain':'amazon.com.tr','page':1},timeout=10)
+        r.raise_for_status(); j=r.json()
+        if not j.get('ok'):return []
+        d=j.get('data') or {}
+        rows=(d.get('results') or d.get('products') or d.get('items') or []) if isinstance(d,dict) else []
+        out=[]
+        for o in rows:
+            if not isinstance(o,dict):continue
+            t=o.get('title') or o.get('name'); u=o.get('url') or o.get('product_url')
+            p=clean_price(o.get('price_value') if o.get('price_value') is not None else o.get('price'))
+            if p and u and same_model(title,t):
+                out.append({'source':'Amazon TR','price':p,'url':u,'title':t})
+        return sorted(out,key=lambda x:x['price'])[:1]
+    except Exception:return []
+
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
@@ -183,7 +205,7 @@ def hepsiburada_public_price(title):
     return None
 
 def matched_offers(title):
-    offers=discover_n11(title)+discover_trendyol(title)+discover_trendyol(title)
+    offers=discover_n11(title)+discover_trendyol(title)+discover_amazon(title)+discover_trendyol(title)
     if strict_zbmini_l2(title):
         sources=[('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi')]
         for source,url in sources:
@@ -204,7 +226,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.3')
+def health():return jsonify(ok=True,service='cebimde',version='3.4')
 
 @app.get('/api/product')
 def product():
