@@ -6,3 +6,25 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 60
     healthCheckPath: /health
+    envVars:
+      - key: SEARXNG_URL
+        fromService:
+          type: web
+          name: cebimde-search
+          property: hostport
+
+  - type: web
+    name: cebimde-search
+    runtime: image
+    plan: free
+    image:
+      url: docker.io/searxng/searxng:latest
+    envVars:
+      - key: SEARXNG_BIND_ADDRESS
+        value: 0.0.0.0
+      - key: SEARXNG_PORT
+        value: 8080
+      - key: SEARXNG_LIMITER
+        value: "false"
+      - key: SEARXNG_SECRET
+        generateValue: true
