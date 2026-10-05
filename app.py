@@ -83,7 +83,10 @@ def product():
             title='Sonoff ZigBee Mini L2 Nötrsüz Akıllı Röle'
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
         offers=matched_offers(title)
-        result={'title':title,'input_source':host,'input_url':target,'offers':offers,'price':offers[0]['price'] if offers else None,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None}
+        best=offers[0]['price'] if offers else None
+        input_price=input_product.get('price')
+        savings=round(input_price-best,2) if input_price and best and input_price>best else 0
+        result={'title':title,'input_source':host,'input_url':target,'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None,'savings':savings}
         return jsonify(ok=True,product=result)
     except Exception as e:return jsonify(ok=False,error=str(e)),422
 
