@@ -52,34 +52,37 @@ def fetch_offer(url,source):
 
 def reef_hepsiburada(sku, url):
     key=os.getenv('REEF_API_KEY','').strip()
-    if not key: return None
+    if not key:return None
     try:
-        r=requests.post(
-            'https://api.reefapi.com/hepsiburada/v1/product/detail',
+        payload={'sku':sku} if sku else {'url':url}
+        payload['max_rotations']=1
+        r=requests.post('https://api.reefapi.com/hepsiburada/v1/product/detail',
             headers={'x-api-key':key,'content-type':'application/json'},
-            json={'sku':sku} if sku else {'url':url},
-            timeout=8)
+            json=payload,timeout=12)
         r.raise_for_status(); j=r.json()
-        if not j.get('ok'): return None
+        if not j.get('ok'):return None
         d=j.get('data') or {}
-        candidates=[]
+        # Official Reef HB detail schema exposes these fields on the product row.
+        # Prefer the exact requested SKU, but allow URL-resolved detail when Reef
+        # has already returned a single product record.
+        if isinstance(d,dict):
+            rsku=str(d.get('sku') or '').upper()
+            title=d.get('title') or d.get('name')
+            price=clean_price(d.get('price'))
+            if price and (not sku or not rsku or rsku==sku.upper()):
+                return {'source':'Hepsiburada','price':price,'url':url,
+                        'title':title or sku,'sku':rsku or sku}
+        # Defensive fallback for an envelope/wrapper around the product.
         for o in walk(d):
-            if not isinstance(o,dict): continue
-            osku=str(o.get('sku') or o.get('productSku') or o.get('merchantSku') or '').upper()
-            otitle=o.get('title') or o.get('name') or o.get('productName')
-            rawprice=o.get('price')
-            if rawprice is None: rawprice=o.get('salePrice')
-            if rawprice is None: rawprice=o.get('currentPrice')
-            oprice=clean_price(rawprice)
-            # Generic HB products: exact SKU is strongest. If Reef omits SKU,
-            # accept a priced named product only when this request supplied a SKU.
-            if oprice and ((sku and osku==sku.upper()) or (sku and not osku and otitle)):
-                candidates.append((o,oprice,osku,otitle))
-        if not candidates:return None
-        exact=[x for x in candidates if sku and x[2]==sku.upper()]
-        o,price,osku,title=(exact or candidates)[0]
-        return {'source':'Hepsiburada','price':price,'url':url,'title':title or sku,'sku':osku or sku}
-    except Exception: return None
+            if not isinstance(o,dict):continue
+            rsku=str(o.get('sku') or '').upper()
+            title=o.get('title') or o.get('name')
+            price=clean_price(o.get('price'))
+            if price and ((sku and rsku==sku.upper()) or (not sku and title)):
+                return {'source':'Hepsiburada','price':price,'url':url,
+                        'title':title or sku,'sku':rsku or sku}
+    except Exception:return None
+    return None
 
 def hepsiburada_public_price(title):
     # Fallback to Hepsiburada's publicly indexed category/search HTML when
@@ -119,7 +122,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.8')
+def health():return jsonify(ok=True,service='cebimde',version='2.9')
 
 @app.get('/api/product')
 def product():
