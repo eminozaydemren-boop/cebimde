@@ -56,27 +56,24 @@ def same_model(a,b):
     return bool(ma and mb and ma.replace('-','')==mb.replace('-',''))
 
 def discover_n11(title):
+    key=os.getenv('REEF_API_KEY','').strip()
     model=model_token(title)
-    if not model:return []
+    if not key or not model:return []
     try:
-        u='https://www.n11.com/arama?q='+quote_plus(model)
-        r=requests.get(u,headers=HEADERS,timeout=6); r.raise_for_status()
-        links=re.findall(r'href=["\'](https://www\.n11\.com/urun/[^"\']+)["\']',r.text,re.I)
-        # Known public candidate is discovery only; it is never trusted until
-        # its live page verifies the exact model and current price below.
-        if model.replace('-','')=='UT12D':
-            links.insert(0,'https://www.n11.com/urun/uni-t-ut12d-temassiz-ac-gerilim-voltaj-dedektoru-20756817')
-        out=[]; seen=set()
-        for link in links[:8]:
-            link=html.unescape(link).split('?')[0]
-            if link in seen:continue
-            seen.add(link)
-            try:
-                rr=requests.get(link,headers=HEADERS,timeout=5); rr.raise_for_status()
-                p=extract_product(rr.text,link)
-                if p.get('price') and same_model(title,p.get('title')):
-                    out.append({'source':'n11','price':p['price'],'url':link,'title':p['title']})
-            except Exception:pass
+        r=requests.post('https://api.reefapi.com/n11/v1/search',
+            headers={'x-api-key':key,'content-type':'application/json'},
+            json={'query':model,'page':1,'max_rotations':1},timeout=10)
+        r.raise_for_status(); j=r.json()
+        if not j.get('ok'):return []
+        d=j.get('data') or {}
+        rows=d.get('products') if isinstance(d,dict) else []
+        out=[]
+        for o in rows or []:
+            if not isinstance(o,dict):continue
+            t=o.get('title'); p=clean_price(o.get('price')); u=o.get('url')
+            if p and u and same_model(title,t):
+                out.append({'source':'n11','price':p,'url':u,'title':t,
+                            'product_id':o.get('product_id')})
         return sorted(out,key=lambda x:x['price'])[:1]
     except Exception:return []
 
@@ -159,7 +156,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.1')
+def health():return jsonify(ok=True,service='cebimde',version='3.2')
 
 @app.get('/api/product')
 def product():
