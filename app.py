@@ -24,14 +24,14 @@ def walk(x):
         for v in x: yield from walk(v)
 
 def extract_product(page,url):
-    out={'title':None,'brand':None,'sku':None,'image':None,'price':None,'currency':None,'url':url}
+    out={'title':None,'brand':None,'sku':None,'mpn':None,'gtin':None,'image':None,'price':None,'currency':None,'url':url}
     for raw in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',page,re.I|re.S):
         try:data=json.loads(html.unescape(raw).strip())
         except:continue
         for o in walk(data):
             t=o.get('@type'); ts=t if isinstance(t,list) else [t]
             if 'Product' not in ts:continue
-            out['title']=out['title'] or o.get('name'); out['sku']=out['sku'] or o.get('sku') or o.get('mpn')
+            out['title']=out['title'] or o.get('name'); out['sku']=out['sku'] or o.get('sku'); out['mpn']=out['mpn'] or o.get('mpn'); out['gtin']=out['gtin'] or o.get('gtin13') or o.get('gtin14') or o.get('gtin12') or o.get('gtin8') or o.get('gtin')
             b=o.get('brand'); out['brand']=out['brand'] or (b.get('name') if isinstance(b,dict) else b)
             im=o.get('image'); out['image']=out['image'] or (im[0] if isinstance(im,list) and im else im)
             offers=o.get('offers'); offers=offers[0] if isinstance(offers,list) and offers else offers
@@ -147,6 +147,39 @@ def discover_amazon(title):
         return sorted(out,key=lambda x:x['price'])[:1]
     except Exception:return []
 
+def identity_match(base,cand):
+    if not base or not cand:return False
+    bg=str(base.get('gtin') or '').strip(); cg=str(cand.get('gtin') or '').strip()
+    if bg and cg:return bg==cg
+    bm=str(base.get('mpn') or '').upper().replace(' ',''); cm=str(cand.get('mpn') or '').upper().replace(' ','')
+    if bm and cm:return bm==cm
+    return same_model(base.get('title'),cand.get('title'))
+
+def verify_external_offer(base,url):
+    try:
+        host=(urlparse(url).hostname or '').lower()
+        if not host or host in ALLOWED:return None
+        r=requests.get(url,headers=HEADERS,timeout=6,allow_redirects=True); r.raise_for_status()
+        final=(urlparse(r.url).hostname or '').lower()
+        if not final:return None
+        p=extract_product(r.text,r.url)
+        if not p.get('price') or not identity_match(base,p):return None
+        return {'source':final.replace('www.',''),'price':p['price'],'url':r.url,'title':p.get('title'),
+                'gtin':p.get('gtin'),'mpn':p.get('mpn')}
+    except Exception:return None
+
+def discover_web_candidates(base):
+    # Safe generic layer: only explicitly supplied/discovered candidate URLs are
+    # accepted after live Product/Offer + identity verification. Search-provider
+    # discovery can feed this list later without weakening verification.
+    raw=os.getenv('CEBIMDE_EXTRA_PRODUCT_URLS','').strip()
+    if not raw:return []
+    out=[]
+    for u in [x.strip() for x in raw.split(',') if x.strip()][:20]:
+        x=verify_external_offer(base,u)
+        if x:out.append(x)
+    return out
+
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
@@ -204,8 +237,9 @@ def hepsiburada_public_price(title):
     except Exception: pass
     return None
 
-def matched_offers(title):
-    offers=discover_n11(title)+discover_trendyol(title)+discover_amazon(title)+discover_trendyol(title)
+def matched_offers(title, base=None):
+    offers=discover_n11(title)+discover_trendyol(title)+discover_amazon(title)
+    if base:offers+=discover_web_candidates(base)+discover_trendyol(title)
     if strict_zbmini_l2(title):
         sources=[('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi')]
         for source,url in sources:
@@ -226,7 +260,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.4')
+def health():return jsonify(ok=True,service='cebimde',version='3.5')
 
 @app.get('/api/product')
 def product():
@@ -249,7 +283,7 @@ def product():
                 hb=reef_hepsiburada(None,target)
             if hb and not title:title=hb.get('title')
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
-        offers=matched_offers(title)
+        offers=matched_offers(title,input_product if input_product else {'title':title})
         input_price=input_product.get('price')
         if hb:
             input_price=hb['price']
