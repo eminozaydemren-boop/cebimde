@@ -180,6 +180,38 @@ def discover_web_candidates(base):
         if x:out.append(x)
     return out
 
+def brave_discover(base):
+    key=os.getenv('BRAVE_SEARCH_API_KEY','').strip()
+    if not key:return []
+    title=(base or {}).get('title') or ''
+    gtin=str((base or {}).get('gtin') or '').strip()
+    mpn=str((base or {}).get('mpn') or '').strip()
+    model=model_token(title) or ''
+    brand=str((base or {}).get('brand') or '').strip()
+    needle=gtin or mpn or model
+    if not needle:return []
+    q=' '.join(x for x in [brand,needle,'satın al fiyat'] if x)
+    try:
+        r=requests.get('https://api.search.brave.com/res/v1/web/search',
+          headers={'X-Subscription-Token':key,'Accept':'application/json'},
+          params={'q':q,'country':'TR','search_lang':'tr','count':20,'safesearch':'moderate'},timeout=8)
+        r.raise_for_status(); j=r.json()
+        rows=((j.get('web') or {}).get('results') or [])
+        seen=set(); out=[]
+        for row in rows:
+            u=(row or {}).get('url')
+            if not u or u in seen:continue
+            seen.add(u)
+            host=(urlparse(u).hostname or '').lower().replace('www.','')
+            if not host or any(x in host for x in ['youtube.com','facebook.com','instagram.com','x.com','twitter.com']):continue
+            # Known marketplaces are already queried through dedicated providers.
+            if any(x in host for x in ['hepsiburada.com','trendyol.com','n11.com','amazon.com.tr']):continue
+            v=verify_external_offer(base,u)
+            if v:out.append(v)
+            if len(out)>=6:break
+        return out
+    except Exception:return []
+
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
@@ -239,7 +271,9 @@ def hepsiburada_public_price(title):
 
 def matched_offers(title, base=None):
     offers=discover_n11(title)+discover_trendyol(title)+discover_amazon(title)
-    if base:offers+=discover_web_candidates(base)+discover_trendyol(title)
+    if base:
+        offers+=discover_web_candidates(base)
+        offers+=brave_discover(base)+discover_trendyol(title)
     if strict_zbmini_l2(title):
         sources=[('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi')]
         for source,url in sources:
@@ -260,7 +294,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.5')
+def health():return jsonify(ok=True,service='cebimde',version='3.6')
 
 @app.get('/api/product')
 def product():
