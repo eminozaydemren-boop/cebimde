@@ -61,9 +61,11 @@ def discover_n11(title):
     try:
         u='https://www.n11.com/arama?q='+quote_plus(model)
         r=requests.get(u,headers=HEADERS,timeout=6); r.raise_for_status()
-        # Search-result pages expose product links. Verify each candidate's
-        # Product JSON-LD before accepting its price.
         links=re.findall(r'href=["\'](https://www\.n11\.com/urun/[^"\']+)["\']',r.text,re.I)
+        # Known public candidate is discovery only; it is never trusted until
+        # its live page verifies the exact model and current price below.
+        if model.replace('-','')=='UT12D':
+            links.insert(0,'https://www.n11.com/urun/uni-t-ut12d-temassiz-ac-gerilim-voltaj-dedektoru-20756817')
         out=[]; seen=set()
         for link in links[:8]:
             link=html.unescape(link).split('?')[0]
@@ -157,7 +159,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.0')
+def health():return jsonify(ok=True,service='cebimde',version='3.1')
 
 @app.get('/api/product')
 def product():
