@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
 import requests, re, html, json, os
+from urllib.parse import quote_plus
 from urllib.parse import urlparse
 
 app=Flask(__name__, static_folder='web', static_url_path='')
@@ -49,6 +50,23 @@ def fetch_offer(url,source):
     if not strict_zbmini_l2(p['title']) or not p['price']: return None
     return {'source':source,'price':p['price'],'url':url,'title':p['title']}
 
+def hepsiburada_public_price(title):
+    # Fallback to Hepsiburada's publicly indexed category/search HTML when
+    # the submitted product page blocks server-side requests.
+    # A price is accepted only beside an exact ZBMINI-L2 single-unit title.
+    try:
+        u='https://www.hepsiburada.com/ara?q='+quote_plus(title)
+        r=requests.get(u,headers=HEADERS,timeout=15); r.raise_for_status()
+        text=html.unescape(re.sub(r'<[^>]+>',' ',r.text))
+        text=re.sub(r'\\s+',' ',text)
+        m=re.search(r'Sonoff\\s+ZigBee?\\s+Mini\\s+L2\\s+Nötrsüz\\s+Akıllı\\s+Röle.{0,900}?([0-9]{1,3}(?:\\.[0-9]{3})*,[0-9]{2})\\s*TL',text,re.I)
+        if m:
+            price=clean_price(m.group(1))
+            if price:
+                return {'source':'Hepsiburada','price':price,'url':u,'title':'Sonoff ZigBee Mini L2 Nötrsüz Akıllı Röle'}
+    except Exception: pass
+    return None
+
 def matched_offers(title):
     if not strict_zbmini_l2(title): return []
     sources=[
@@ -83,8 +101,14 @@ def product():
             title='Sonoff ZigBee Mini L2 Nötrsüz Akıllı Röle'
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
         offers=matched_offers(title)
-        best=offers[0]['price'] if offers else None
         input_price=input_product.get('price')
+        if host in ('hepsiburada.com','www.hepsiburada.com') and not input_price:
+            hb=hepsiburada_public_price(title)
+            if hb:
+                input_price=hb['price']
+                offers.append(hb)
+                offers=sorted(offers,key=lambda x:x['price'])
+        best=offers[0]['price'] if offers else None
         savings=round(input_price-best,2) if input_price and best and input_price>best else 0
         result={'title':title,'input_source':host,'input_url':target,'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None,'savings':savings}
         return jsonify(ok=True,product=result)
