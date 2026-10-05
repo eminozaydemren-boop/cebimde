@@ -77,6 +77,32 @@ def discover_n11(title):
         return sorted(out,key=lambda x:x['price'])[:1]
     except Exception:return []
 
+def discover_trendyol(title):
+    key=os.getenv('REEF_API_KEY','').strip()
+    model=model_token(title)
+    if not key or not model:return []
+    try:
+        r=requests.post('https://api.reefapi.com/trendyol/v1/search',
+            headers={'x-api-key':key,'content-type':'application/json'},
+            json={'query':model,'page':1,'max_pages':1},timeout=10)
+        r.raise_for_status(); j=r.json()
+        if not j.get('ok'):return []
+        d=j.get('data') or {}
+        rows=d.get('results') if isinstance(d,dict) else []
+        out=[]
+        for o in rows or []:
+            if not isinstance(o,dict):continue
+            t=o.get('title'); u=o.get('url')
+            # Reef search exposes a numeric price_value on live rows; prefer it
+            # over locale-formatted strings to avoid Turkish separator errors.
+            p=clean_price(o.get('price_value'))
+            if p is None:p=clean_price(o.get('price'))
+            if p and u and same_model(title,t):
+                out.append({'source':'Trendyol','price':p,'url':u,'title':t,
+                            'content_id':o.get('content_id')})
+        return sorted(out,key=lambda x:x['price'])[:1]
+    except Exception:return []
+
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
@@ -135,7 +161,7 @@ def hepsiburada_public_price(title):
     return None
 
 def matched_offers(title):
-    offers=discover_n11(title)
+    offers=discover_n11(title)+discover_trendyol(title)
     if strict_zbmini_l2(title):
         sources=[('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi')]
         for source,url in sources:
@@ -156,7 +182,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.2')
+def health():return jsonify(ok=True,service='cebimde',version='3.3')
 
 @app.get('/api/product')
 def product():
