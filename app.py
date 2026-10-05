@@ -103,6 +103,28 @@ def discover_trendyol(title):
         return sorted(out,key=lambda x:x['price'])[:1]
     except Exception:return []
 
+def discover_trendyol(title):
+    key=os.getenv('REEF_API_KEY','').strip()
+    model=model_token(title)
+    if not key or not model:return []
+    try:
+        r=requests.post('https://api.reefapi.com/trendyol/v1/search',
+            headers={'x-api-key':key,'content-type':'application/json'},
+            json={'query':model,'page':1},timeout=10)
+        r.raise_for_status(); j=r.json()
+        if not j.get('ok'):return []
+        d=j.get('data') or {}
+        rows=(d.get('results') or d.get('products') or []) if isinstance(d,dict) else []
+        out=[]
+        for o in rows:
+            if not isinstance(o,dict):continue
+            t=o.get('title') or o.get('name'); u=o.get('url')
+            p=clean_price(o.get('price_value') if o.get('price_value') is not None else o.get('price'))
+            if p and u and same_model(title,t):
+                out.append({'source':'Trendyol','price':p,'url':u,'title':t})
+        return sorted(out,key=lambda x:x['price'])[:1]
+    except Exception:return []
+
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
@@ -161,7 +183,7 @@ def hepsiburada_public_price(title):
     return None
 
 def matched_offers(title):
-    offers=discover_n11(title)+discover_trendyol(title)
+    offers=discover_n11(title)+discover_trendyol(title)+discover_trendyol(title)
     if strict_zbmini_l2(title):
         sources=[('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi')]
         for source,url in sources:
