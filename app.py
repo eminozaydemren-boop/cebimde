@@ -62,23 +62,24 @@ def reef_hepsiburada(sku, url):
         r.raise_for_status(); j=r.json()
         if not j.get('ok'): return None
         d=j.get('data') or {}
-        # ReefAPI responses may wrap the product; find the exact SKU record
-        # rather than assuming title/price live at data's top level.
         candidates=[]
         for o in walk(d):
-            if isinstance(o,dict):
-                osku=str(o.get('sku') or '').upper()
-                otitle=o.get('title') or o.get('name')
-                oprice=clean_price(o.get('price'))
-                if oprice and ((sku and osku==sku.upper()) or strict_zbmini_l2(otitle)):
-                    candidates.append((o,oprice))
-        if candidates:
-            exact=[x for x in candidates if sku and str(x[0].get('sku') or '').upper()==sku.upper()]
-            o,price=(exact or candidates)[0]
-            title=o.get('title') or o.get('name') or 'Sonoff ZigBee Mini L2 Nötrsüz Akıllı Röle'
-            return {'source':'Hepsiburada','price':price,'url':url,'title':title}
-    except Exception: pass
-    return None
+            if not isinstance(o,dict): continue
+            osku=str(o.get('sku') or o.get('productSku') or o.get('merchantSku') or '').upper()
+            otitle=o.get('title') or o.get('name') or o.get('productName')
+            rawprice=o.get('price')
+            if rawprice is None: rawprice=o.get('salePrice')
+            if rawprice is None: rawprice=o.get('currentPrice')
+            oprice=clean_price(rawprice)
+            # Generic HB products: exact SKU is strongest. If Reef omits SKU,
+            # accept a priced named product only when this request supplied a SKU.
+            if oprice and ((sku and osku==sku.upper()) or (sku and not osku and otitle)):
+                candidates.append((o,oprice,osku,otitle))
+        if not candidates:return None
+        exact=[x for x in candidates if sku and x[2]==sku.upper()]
+        o,price,osku,title=(exact or candidates)[0]
+        return {'source':'Hepsiburada','price':price,'url':url,'title':title or sku,'sku':osku or sku}
+    except Exception: return None
 
 def hepsiburada_public_price(title):
     # Fallback to Hepsiburada's publicly indexed category/search HTML when
@@ -118,7 +119,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.6')
+def health():return jsonify(ok=True,service='cebimde',version='2.7')
 
 @app.get('/api/product')
 def product():
@@ -130,20 +131,19 @@ def product():
         try:
             r=requests.get(target,headers=HEADERS,timeout=6); r.raise_for_status(); input_product=extract_product(r.text,target); title=input_product.get('title')
         except Exception: pass
-        # Stable identity fallback for the known Hepsiburada SKU; this is identity only, never a price.
-        if 'HBCV00004N35Q1' in target:
-            title='Sonoff ZigBee Mini L2 Nötrsüz Akıllı Röle'
+        sku_match=re.search(r'(HBCV[0-9A-Z]+)',target,re.I) if host in ('hepsiburada.com','www.hepsiburada.com') else None
+        sku=sku_match.group(1).upper() if sku_match else None
+        hb=None
+        if host in ('hepsiburada.com','www.hepsiburada.com') and sku:
+            hb=reef_hepsiburada(sku,target)
+            if hb and not title:title=hb.get('title')
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
         offers=matched_offers(title)
         input_price=input_product.get('price')
-        if host in ('hepsiburada.com','www.hepsiburada.com') and not input_price:
-            sku_match=re.search(r'(HBCV[0-9A-Z]+)',target,re.I)
-            sku=sku_match.group(1).upper() if sku_match else None
-            hb=reef_hepsiburada(sku,target)
-            if hb:
-                input_price=hb['price']
-                offers.append(hb)
-                offers=sorted(offers,key=lambda x:x['price'])
+        if hb:
+            input_price=hb['price']
+            offers.append(hb)
+            offers=sorted(offers,key=lambda x:x['price'])
         best=offers[0]['price'] if offers else None
         savings=round(input_price-best,2) if input_price and best and input_price>best else 0
         result={'title':title,'input_source':host,'input_url':target,'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None,'savings':savings}
