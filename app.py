@@ -62,9 +62,20 @@ def reef_hepsiburada(sku, url):
         r.raise_for_status(); j=r.json()
         if not j.get('ok'): return None
         d=j.get('data') or {}
-        title=d.get('title') or d.get('name')
-        price=clean_price(d.get('price'))
-        if strict_zbmini_l2(title) and price:
+        # ReefAPI responses may wrap the product; find the exact SKU record
+        # rather than assuming title/price live at data's top level.
+        candidates=[]
+        for o in walk(d):
+            if isinstance(o,dict):
+                osku=str(o.get('sku') or '').upper()
+                otitle=o.get('title') or o.get('name')
+                oprice=clean_price(o.get('price'))
+                if oprice and ((sku and osku==sku.upper()) or strict_zbmini_l2(otitle)):
+                    candidates.append((o,oprice))
+        if candidates:
+            exact=[x for x in candidates if sku and str(x[0].get('sku') or '').upper()==sku.upper()]
+            o,price=(exact or candidates)[0]
+            title=o.get('title') or o.get('name') or 'Sonoff ZigBee Mini L2 Nötrsüz Akıllı Röle'
             return {'source':'Hepsiburada','price':price,'url':url,'title':title}
     except Exception: pass
     return None
@@ -103,7 +114,7 @@ def matched_offers(title):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.4')
+def health():return jsonify(ok=True,service='cebimde',version='2.5')
 
 @app.get('/api/product')
 def product():
