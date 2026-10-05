@@ -50,6 +50,25 @@ def fetch_offer(url,source):
     if not strict_zbmini_l2(p['title']) or not p['price']: return None
     return {'source':source,'price':p['price'],'url':url,'title':p['title']}
 
+def reef_hepsiburada(sku, url):
+    key=os.getenv('REEF_API_KEY','').strip()
+    if not key: return None
+    try:
+        r=requests.post(
+            'https://api.reefapi.com/hepsiburada/v1/product/detail',
+            headers={'x-api-key':key,'content-type':'application/json'},
+            json={'sku':sku} if sku else {'url':url},
+            timeout=30)
+        r.raise_for_status(); j=r.json()
+        if not j.get('ok'): return None
+        d=j.get('data') or {}
+        title=d.get('title') or d.get('name')
+        price=clean_price(d.get('price'))
+        if strict_zbmini_l2(title) and price:
+            return {'source':'Hepsiburada','price':price,'url':url,'title':title}
+    except Exception: pass
+    return None
+
 def hepsiburada_public_price(title):
     # Fallback to Hepsiburada's publicly indexed category/search HTML when
     # the submitted product page blocks server-side requests.
@@ -84,7 +103,7 @@ def matched_offers(title):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='2.2')
+def health():return jsonify(ok=True,service='cebimde',version='2.4')
 
 @app.get('/api/product')
 def product():
@@ -103,7 +122,9 @@ def product():
         offers=matched_offers(title)
         input_price=input_product.get('price')
         if host in ('hepsiburada.com','www.hepsiburada.com') and not input_price:
-            hb=hepsiburada_public_price(title)
+            sku_match=re.search(r'(HBCV[0-9A-Z]+)',target,re.I)
+            sku=sku_match.group(1).upper() if sku_match else None
+            hb=reef_hepsiburada(sku,target) or hepsiburada_public_price(title)
             if hb:
                 input_price=hb['price']
                 offers.append(hb)
