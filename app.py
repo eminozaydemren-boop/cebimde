@@ -247,28 +247,35 @@ def searxng_discover(base):
     needle=str((base or {}).get('gtin') or (base or {}).get('mpn') or model_token(title) or '').strip()
     brand=str((base or {}).get('brand') or '').strip()
     if not needle:return []
-    q=' '.join(x for x in [brand,needle,'satın al fiyat'] if x)
-    params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1}
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.28','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
+    # Search both the open Turkish web and high-value national retailers.
+    # Every candidate still has to pass verify_external_offer; discovery alone
+    # never becomes a price.
+    national=('teknosa.com','mediamarkt.com.tr','vatanbilgisayar.com','pazarama.com',
+              'pttavm.com','idefix.com','ciceksepeti.com','trendyol.com',
+              'hepsiburada.com','n11.com','amazon.com.tr')
+    queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
+    queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.29','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
     try:
-        r=requests.get(endpoint+'/search',params=params,
-                       headers=dict(headers,Accept='text/html'),timeout=8)
-        if not r.ok:return []
-        hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
-        urls=[html.unescape(u) for u in hrefs if u.startswith(('http://','https://'))]
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
                  'pinterest.com','tiktok.com','linkedin.com')
-        known=()
         searx_host=(urlparse(endpoint).hostname or '').lower().replace('www.','')
-        for u in urls:
-            if not u or u in seen:continue
-            seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
-            if not host or host==searx_host or any(x in host for x in blocked) or any(x in host for x in known):continue
-            v=verify_external_offer(base,u)
-            if v:out.append(v)
-            if len(out)>=8:break
-        return out
+        for q in queries:
+            params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1}
+            r=requests.get(endpoint+'/search',params=params,
+                           headers=dict(headers,Accept='text/html'),timeout=8)
+            if not r.ok:continue
+            hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            urls=[html.unescape(u) for u in hrefs if u.startswith(('http://','https://'))]
+            for u in urls:
+                if not u or u in seen:continue
+                seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
+                if not host or host==searx_host or any(x in host for x in blocked):continue
+                v=verify_external_offer(base,u)
+                if v:out.append(v)
+                if len(out)>=16:return sorted(out,key=lambda x:x['price'])
+        return sorted(out,key=lambda x:x['price'])
     except Exception:return []
 
 
@@ -404,7 +411,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.28')
+def health():return jsonify(ok=True,service='cebimde',version='3.29')
 
 @app.get('/api/debug/hb')
 def debug_hb():
