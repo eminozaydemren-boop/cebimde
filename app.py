@@ -248,7 +248,7 @@ def searxng_discover(base):
                 r=requests.get(endpoint+'/search',params=dict(params,format='json'),
                                headers=dict(headers,Accept='application/json'),timeout=20)
                 if r.status_code==503:
-                    try:requests.get(endpoint+'/',headers=headers,timeout=100)
+                    try:requests.get(endpoint+'/',headers=headers,timeout=35)
                     except Exception:pass
                     r=requests.get(endpoint+'/search',params=dict(params,format='json'),
                                    headers=dict(headers,Accept='application/json'),timeout=25)
@@ -258,7 +258,7 @@ def searxng_discover(base):
                     r=requests.get(endpoint+'/search',params=params,
                                    headers=dict(headers,Accept='text/html'),timeout=25)
                     if r.status_code==503:
-                        try:requests.get(endpoint+'/',headers=headers,timeout=100)
+                        try:requests.get(endpoint+'/',headers=headers,timeout=35)
                         except Exception:pass
                         r=requests.get(endpoint+'/search',params=params,
                                        headers=dict(headers,Accept='text/html'),timeout=25)
@@ -415,7 +415,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.21')
+def health():return jsonify(ok=True,service='cebimde',version='3.22')
 
 @app.get('/api/debug/hb')
 def debug_hb():
