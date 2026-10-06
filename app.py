@@ -184,7 +184,9 @@ def identity_match(base,cand):
     if bg and cg:return bg==cg
     bm=str(base.get('mpn') or '').upper().replace(' ',''); cm=str(cand.get('mpn') or '').upper().replace(' ','')
     if bm and cm:return bm==cm
-    return same_model(base.get('title'),cand.get('title'))
+    # A model token appearing somewhere in a page title is useful for discovery,
+    # but is not strong enough to certify an external price by itself.
+    return False
 
 def verify_external_offer(base,url):
     try:
@@ -266,7 +268,7 @@ def searxng_discover(base):
     # SearXNG query already returns multiple Turkish shops; site-specific deep
     # searches belong in background monitoring, not the interactive request.
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.50','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.51','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -435,7 +437,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.50')
+def health():return jsonify(ok=True,service='cebimde',version='3.51')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -505,7 +507,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.50','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.51','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -513,7 +515,7 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.50',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.51',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
@@ -531,11 +533,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.50',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.51',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.50',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.51',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
