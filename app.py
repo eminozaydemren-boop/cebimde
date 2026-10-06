@@ -255,7 +255,7 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.29','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.30','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -266,8 +266,22 @@ def searxng_discover(base):
             r=requests.get(endpoint+'/search',params=params,
                            headers=dict(headers,Accept='text/html'),timeout=8)
             if not r.ok:continue
+            # SearXNG result links are not always direct absolute URLs. Parse
+            # both normal hrefs and redirect-style ?url= links.
             hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
-            urls=[html.unescape(u) for u in hrefs if u.startswith(('http://','https://'))]
+            urls=[]
+            for raw in hrefs:
+                u=html.unescape(raw)
+                if u.startswith(('http://','https://')):
+                    urls.append(u)
+                    continue
+                m=re.search(r'(?:[?&]|^)url=([^&]+)',u,re.I)
+                if m:
+                    try:
+                        from urllib.parse import unquote
+                        decoded=unquote(m.group(1))
+                        if decoded.startswith(('http://','https://')):urls.append(decoded)
+                    except Exception:pass
             for u in urls:
                 if not u or u in seen:continue
                 seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
@@ -411,7 +425,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.29')
+def health():return jsonify(ok=True,service='cebimde',version='3.30')
 
 @app.get('/api/debug/hb')
 def debug_hb():
