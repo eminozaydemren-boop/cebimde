@@ -47,8 +47,11 @@ def strict_zbmini_l2(title):
 def model_token(title):
     s=(title or '').upper()
     toks=re.findall(r'(?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*[0-9])[A-Z0-9-]{4,}',s)
+    # Some stores write model codes with a space/hyphen: "UT 12D".
+    for m in re.finditer(r'\\b([A-Z]{1,5})[ -]+([0-9]{1,4}[A-Z]{1,4})\\b',s):
+        toks.append(m.group(1)+m.group(2))
     bad={'1000V','600V','220V','90V'}
-    toks=[x for x in toks if x not in bad]
+    toks=[x for x in toks if x.replace('-','') not in bad]
     return max(toks,key=len) if toks else None
 
 def same_model(a,b):
@@ -338,7 +341,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.9')
+def health():return jsonify(ok=True,service='cebimde',version='3.10')
 
 @app.get('/api/product')
 def product():
