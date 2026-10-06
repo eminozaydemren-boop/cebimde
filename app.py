@@ -219,40 +219,18 @@ def searxng_discover(base):
     endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
     if not endpoint:return []
     title=(base or {}).get('title') or ''
-    gtin=str((base or {}).get('gtin') or '').strip()
-    mpn=str((base or {}).get('mpn') or '').strip()
-    model=model_token(title) or ''
+    needle=str((base or {}).get('gtin') or (base or {}).get('mpn') or model_token(title) or '').strip()
     brand=str((base or {}).get('brand') or '').strip()
-    needle=gtin or mpn or model
     if not needle:return []
-
-    # Use several buying-oriented queries and the first two result pages.
-    # SearXNG is discovery only: every external offer still has to pass our
-    # live page + exact product identity verification before it is displayed.
-    queries=[]
-    for q in (
-        ' '.join(x for x in [brand,needle,'satın al fiyat'] if x),
-        ' '.join(x for x in [needle,'fiyat Türkiye'] if x),
-        ' '.join(x for x in ['"'+needle+'"','stokta'] if x),
-    ):
-        if q and q not in queries:queries.append(q)
-
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.18','Accept-Language':'tr-TR,tr;q=0.9'}
-    urls=[]
+    q=' '.join(x for x in [brand,needle,'satın al fiyat'] if x)
+    params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.24','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
-        for q in queries[:1]:
-            for page in (1,):
-                params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':page}
-                # Blitz free apps can be asleep and return 503 while waking.
-                # Warm the root and retry search instead of silently abandoning web discovery.
-                r=requests.get(endpoint+'/search',params=dict(params,format='json'),
-                               headers=dict(headers,Accept='application/json'),timeout=8)
-                if r.status_code==503:
-                        return []
-                    r.raise_for_status()
-                    hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
-                    urls.extend(html.unescape(u) for u in hrefs if u.startswith(('http://','https://')))
-
+        r=requests.get(endpoint+'/search',params=params,
+                       headers=dict(headers,Accept='text/html'),timeout=8)
+        if not r.ok:return []
+        hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+        urls=[html.unescape(u) for u in hrefs if u.startswith(('http://','https://'))]
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
                  'pinterest.com','tiktok.com','linkedin.com')
@@ -260,8 +238,7 @@ def searxng_discover(base):
         searx_host=(urlparse(endpoint).hostname or '').lower().replace('www.','')
         for u in urls:
             if not u or u in seen:continue
-            seen.add(u)
-            host=(urlparse(u).hostname or '').lower().replace('www.','')
+            seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
             if not host or host==searx_host or any(x in host for x in blocked) or any(x in host for x in known):continue
             v=verify_external_offer(base,u)
             if v:out.append(v)
