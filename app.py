@@ -255,7 +255,7 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.39','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.40','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -277,7 +277,7 @@ def searxng_discover(base):
             if not r or not r.ok:continue
             # SearXNG result links are not always direct absolute URLs. Parse
             # both normal hrefs and redirect-style ?url= links.
-            hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            hrefs=re.findall(r'<a[^>]+href=["\']([^"\']+)["\']',r.text,re.I)
             # Modern SearXNG themes can expose result URLs in data attributes
             # or escaped JSON, not only anchor hrefs.
             hrefs += re.findall(r'(?:data-url|data-href)=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
@@ -438,7 +438,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.39')
+def health():return jsonify(ok=True,service='cebimde',version='3.40')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -531,7 +531,7 @@ def debug_web():
                 debug_meta={'html_len':len(r.text),'content_type':r.headers.get('content-type'),
                             'final_url':r.url,'has_result_marker':bool(re.search(r'result|article|url_wrapper',r.text,re.I)),
                             'html_head':re.sub(r'\\s+',' ',r.text[:500])}
-            hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            hrefs=re.findall(r'<a[^>]+href=["\']([^"\']+)["\']',r.text,re.I)
             for raw in hrefs:
                 u=html.unescape(raw)
                 if not u.startswith(('http://','https://')):
@@ -564,7 +564,7 @@ def debug_web():
         # sanitized slice around the first result marker to identify the exact
         # result-link markup used by this image version.
         if not found and 'r' in locals() and r is not None:
-            anchors=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            anchors=re.findall(r'<a[^>]+href=["\']([^"\']+)["\']',r.text,re.I)
             debug_meta['anchor_count']=len(anchors)
             debug_meta['absolute_anchor_count']=sum(1 for x in anchors if html.unescape(x).startswith(('http://','https://')))
             debug_meta['ut12d_present']='ut12d' in r.text.lower()
