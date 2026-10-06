@@ -403,7 +403,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.19')
+def health():return jsonify(ok=True,service='cebimde',version='3.20')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -462,7 +462,9 @@ def debug_web():
         for page in (1,2):
             params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':page}
             r=requests.get(endpoint+'/search',params=params,headers=dict(headers,Accept='text/html'),timeout=20)
-            r.raise_for_status()
+            if not r.ok:
+                return jsonify(ok=False,error='SearXNG arama hatasi',http_status=r.status_code,
+                               search_url=r.url,searxng_host=(urlparse(endpoint).hostname or '')),502
             hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
             for raw in hrefs:
                 u=html.unescape(raw)
