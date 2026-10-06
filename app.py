@@ -240,28 +240,15 @@ def searxng_discover(base):
     headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.18','Accept-Language':'tr-TR,tr;q=0.9'}
     urls=[]
     try:
-        for q in queries:
-            for page in (1,2):
+        for q in queries[:1]:
+            for page in (1,):
                 params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':page}
                 # Blitz free apps can be asleep and return 503 while waking.
                 # Warm the root and retry search instead of silently abandoning web discovery.
                 r=requests.get(endpoint+'/search',params=dict(params,format='json'),
-                               headers=dict(headers,Accept='application/json'),timeout=20)
+                               headers=dict(headers,Accept='application/json'),timeout=8)
                 if r.status_code==503:
-                    try:requests.get(endpoint+'/',headers=headers,timeout=35)
-                    except Exception:pass
-                    r=requests.get(endpoint+'/search',params=dict(params,format='json'),
-                                   headers=dict(headers,Accept='application/json'),timeout=25)
-                if r.ok and 'json' in (r.headers.get('content-type') or '').lower():
-                    urls.extend((row or {}).get('url') for row in (r.json().get('results') or [])[:50])
-                else:
-                    r=requests.get(endpoint+'/search',params=params,
-                                   headers=dict(headers,Accept='text/html'),timeout=25)
-                    if r.status_code==503:
-                        try:requests.get(endpoint+'/',headers=headers,timeout=35)
-                        except Exception:pass
-                        r=requests.get(endpoint+'/search',params=params,
-                                       headers=dict(headers,Accept='text/html'),timeout=25)
+                        return []
                     r.raise_for_status()
                     hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
                     urls.extend(html.unescape(u) for u in hrefs if u.startswith(('http://','https://')))
@@ -278,7 +265,7 @@ def searxng_discover(base):
             if not host or host==searx_host or any(x in host for x in blocked) or any(x in host for x in known):continue
             v=verify_external_offer(base,u)
             if v:out.append(v)
-            if len(out)>=15:break
+            if len(out)>=8:break
         return out
     except Exception:return []
 
@@ -415,7 +402,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.22')
+def health():return jsonify(ok=True,service='cebimde',version='3.23')
 
 @app.get('/api/debug/hb')
 def debug_hb():
