@@ -314,7 +314,7 @@ def searxng_discover(base):
     # SearXNG query already returns multiple Turkish shops; site-specific deep
     # searches belong in background monitoring, not the interactive request.
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.63','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.64','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -509,7 +509,48 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.63')
+def health():return jsonify(ok=True,service='cebimde',version='3.64')
+
+@app.get('/api/debug/external')
+def debug_external():
+    model=request.args.get('model','UT12D').strip().upper()
+    if model not in ('UT12D','ZBMINI-L2'):
+        return jsonify(ok=False,error='Desteklenmeyen test modeli'),400
+    base={'title':'Uni-T UT12D Temassiz Voltaj Dedektoru' if model=='UT12D' else 'Sonoff ZBMINI-L2 Akilli Role',
+          'mpn':model,'brand':'Uni-T' if model=='UT12D' else 'Sonoff'}
+    endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
+    if not endpoint:return jsonify(ok=False,error='Arama servisi tanimli degil'),503
+    try:
+        r=requests.get(endpoint+'/search',
+            params={'q':model+' satin al fiyat Turkiye','language':'tr-TR','categories':'general'},
+            headers={'User-Agent':'Mozilla/5.0','Accept':'text/html'},timeout=8)
+        r.raise_for_status()
+        urls=searx_result_urls(r.text,endpoint)
+        preferred=('robotistan.com','unitturkiye.com','uni-t.com.tr','bauhaus.com.tr',
+                   'perpaotomasyon.com','elektrikdukani.com','elcelektromarket.com')
+        picked=[]
+        for u in urls:
+            host=(urlparse(u).hostname or '').lower()
+            if any(host==h or host.endswith('.'+h) for h in preferred) and u not in picked:
+                picked.append(u)
+            if len(picked)>=3:break
+        rows=[]
+        for u in picked:
+            try:
+                rr=requests.get(u,headers=HEADERS,timeout=4,allow_redirects=True)
+                p=extract_product(rr.text,rr.url)
+                rows.append({'host':(urlparse(u).hostname or ''),'status':rr.status_code,
+                    'title':str(p.get('title') or '')[:130],
+                    'brand':str(p.get('brand') or '')[:50],
+                    'mpn':str(p.get('mpn') or '')[:50],
+                    'gtin_present':bool(p.get('gtin')),
+                    'price_present':p.get('price') is not None,
+                    'currency':p.get('currency'),
+                    'identity_match':identity_match(base,p),
+                    'eligible':bool(p.get('price') and str(p.get('currency') or '').upper() in ('TRY','TL','₺') and identity_match(base,p))})
+            except Exception as e:rows.append({'host':(urlparse(u).hostname or ''),'error':type(e).__name__})
+        return jsonify(ok=True,version='3.64',discovered=len(urls),inspected=rows)
+    except Exception as e:return jsonify(ok=False,version='3.64',error=type(e).__name__),502
 
 @app.get('/api/debug/n11')
 def debug_n11():
@@ -539,7 +580,7 @@ def debug_n11():
                 'price_present':clean_price(raw) is not None,
                 'url_present':bool(x.get('url') or x.get('product_url') or x.get('link')),
                 'fields':list(x.keys())[:20]})
-        return jsonify(ok=True,version='3.63',http_status=r.status_code,reef_ok=j.get('ok') if isinstance(j,dict) else None,
+        return jsonify(ok=True,version='3.64',http_status=r.status_code,reef_ok=j.get('ok') if isinstance(j,dict) else None,
             error=str(j.get('error') or j.get('message') or '')[:180] if isinstance(j,dict) else '',
             data_type=type(d).__name__,data_keys=list(d.keys())[:20] if isinstance(d,dict) else [],
             count=len(rows),sample=sample)
@@ -613,7 +654,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.63','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.64','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -621,7 +662,7 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.63',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.64',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
@@ -639,11 +680,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.63',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.64',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.63',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.64',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
