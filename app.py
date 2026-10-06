@@ -239,7 +239,7 @@ def searxng_discover(base):
     if not needle:return []
     q=' '.join(x for x in [brand,needle,'satın al fiyat'] if x)
     params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1}
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.24','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.26','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
     try:
         r=requests.get(endpoint+'/search',params=params,
                        headers=dict(headers,Accept='text/html'),timeout=8)
@@ -394,7 +394,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.23')
+def health():return jsonify(ok=True,service='cebimde',version='3.26')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -447,7 +447,7 @@ def debug_web():
     if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
     base={'title':model,'mpn':model_token(model)}
     q='"'+model+'" fiyat satın al Türkiye'
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.19','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.26','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
     found=[]; seen=set()
     try:
         for page in (1,2):
