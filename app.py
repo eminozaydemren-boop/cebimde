@@ -1,7 +1,35 @@
 from flask import Flask, request, jsonify, send_from_directory
 import requests, re, html, json, os
+from html.parser import HTMLParser
 from urllib.parse import quote_plus
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin, parse_qs, unquote
+
+class SearxLinkParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.links=[]
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == 'a':
+            href=dict(attrs).get('href')
+            if href:self.links.append(href)
+
+def searx_result_urls(body, endpoint):
+    parser=SearxLinkParser()
+    try:parser.feed(body or '')
+    except Exception:return []
+    out=[]; seen=set()
+    for raw in parser.links:
+        try:
+            u=urljoin(endpoint+'/',html.unescape(str(raw)).strip())
+            qs=parse_qs(urlparse(u).query)
+            target=(qs.get('url') or [None])[0]
+            if target:
+                d=unquote(target)
+                if d.startswith(('http://','https://')):u=d
+            if u.startswith(('http://','https://')) and u not in seen:
+                seen.add(u); out.append(u)
+        except Exception:continue
+    return out
 
 app=Flask(__name__, static_folder='web', static_url_path='')
 ALLOWED={'www.hepsiburada.com','hepsiburada.com','www.amazon.com.tr','amazon.com.tr','www.trendyol.com','trendyol.com','www.n11.com','n11.com'}
@@ -255,7 +283,7 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.45','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.46','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -275,26 +303,7 @@ def searxng_discover(base):
                 except requests.RequestException:
                     r=None
             if not r or not r.ok:continue
-            # SearXNG result links are not always direct absolute URLs. Parse
-            # both normal hrefs and redirect-style ?url= links.
-            hrefs=re.findall(r'<a\\b[^>]*?href\\s*=\\s*[\\\"\\\']([^\\\"\\\']+)[\\\"\\\']',r.text,re.I)
-            # Modern SearXNG themes can expose result URLs in data attributes
-            # or escaped JSON, not only anchor hrefs.
-            hrefs += re.findall(r'(?:data-url|data-href)=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
-            hrefs += re.findall(r'https?://[^"\\\'<>\\s]+',r.text,re.I)
-            urls=[]
-            for raw in hrefs:
-                u=html.unescape(raw)
-                if u.startswith(('http://','https://')):
-                    urls.append(u)
-                    continue
-                m=re.search(r'(?:[?&]|^)url=([^&]+)',u,re.I)
-                if m:
-                    try:
-                        from urllib.parse import unquote
-                        decoded=unquote(m.group(1))
-                        if decoded.startswith(('http://','https://')):urls.append(decoded)
-                    except Exception:pass
+            urls=searx_result_urls(r.text,endpoint)
             for u in urls:
                 if not u or u in seen:continue
                 seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
@@ -438,7 +447,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.45')
+def health():return jsonify(ok=True,service='cebimde',version='3.46')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -508,7 +517,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.45','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.46','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -516,26 +525,12 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.45',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.46',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
-        # Avoid regex entirely here: collect absolute URLs with a small deterministic scanner.
-        urls=[]; seen=set()
-        for marker in ('https://','http://'):
-            pos=0
-            while True:
-                i=body.find(marker,pos)
-                if i<0: break
-                j=i
-                while j<len(body) and body[j] not in '"\\\'<> \\t\\r\\n':
-                    j+=1
-                u=html.unescape(body[i:j]).replace('\\\\/','/')
-                pos=max(j,i+len(marker))
-                if u and u not in seen:
-                    seen.add(u); urls.append(u)
-                if len(urls)>=80: break
-            if len(urls)>=80: break
+        # Parse actual SearXNG result anchors, including redirect links.
+        urls=searx_result_urls(body,endpoint)
         host0=(urlparse(endpoint).hostname or '').lower().replace('www.','')
         candidates=[]
         for u in urls:
@@ -548,11 +543,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.45',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.46',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.45',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.46',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
