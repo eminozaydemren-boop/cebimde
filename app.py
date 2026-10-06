@@ -373,7 +373,48 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.15')
+def health():return jsonify(ok=True,service='cebimde',version='3.16')
+
+@app.get('/api/debug/hb')
+def debug_hb():
+    sku=request.args.get('sku','').strip().upper()
+    if not re.fullmatch(r'HBCV[0-9A-Z]+',sku):
+        return jsonify(ok=False,error='Gecersiz SKU'),400
+    key=os.getenv('REEF_API_KEY','').strip()
+    out={'ok':True,'sku':sku,'reef_key_present':bool(key)}
+    if not key:return jsonify(out)
+    tests=[
+        ('detail','https://api.reefapi.com/hepsiburada/v1/product/detail',{'sku':sku,'max_rotations':1}),
+        ('offers','https://api.reefapi.com/hepsiburada/v1/product/offers',{'sku':sku})
+    ]
+    for label,endpoint,payload in tests:
+        try:
+            r=requests.post(endpoint,headers={'x-api-key':key,'content-type':'application/json'},json=payload,timeout=20)
+            item={'http_status':r.status_code,'content_type':r.headers.get('content-type')}
+            try:
+                j=r.json()
+                if isinstance(j,dict):
+                    item['reef_ok']=j.get('ok')
+                    item['error']=j.get('error') or j.get('message')
+                    d=j.get('data')
+                    item['data_type']=type(d).__name__
+                    if isinstance(d,dict):
+                        item['data_keys']=list(d.keys())[:25]
+                        item['returned_sku']=d.get('sku')
+                        item['title']=d.get('title') or d.get('name')
+                        item['price']=d.get('price')
+                        if isinstance(d.get('offers'),list):item['offers_count']=len(d.get('offers'))
+                    elif isinstance(d,list):
+                        item['data_count']=len(d)
+                        if d and isinstance(d[0],dict):item['first_keys']=list(d[0].keys())[:25]
+            except Exception as e:
+                item['json_error']=type(e).__name__
+                item['body_prefix']=r.text[:300]
+            out[label]=item
+        except Exception as e:
+            out[label]={'exception':type(e).__name__,'message':str(e)[:300]}
+    return jsonify(out)
+
 
 @app.get('/api/product')
 def product():
