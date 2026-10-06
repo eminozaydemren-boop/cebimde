@@ -93,18 +93,30 @@ def discover_n11(title):
     try:
         r=requests.post('https://api.reefapi.com/n11/v1/search',
             headers={'x-api-key':key,'content-type':'application/json'},
-            json={'query':model,'page':1,'max_rotations':1},timeout=10)
+            json={'query':model,'page':1,'max_rotations':1},timeout=6)
         r.raise_for_status(); j=r.json()
         if not j.get('ok'):return []
         d=j.get('data') or {}
-        rows=d.get('products') if isinstance(d,dict) else []
+        rows=[]
+        if isinstance(d,dict):
+            for k in ('products','results','items'):
+                if isinstance(d.get(k),list):
+                    rows=d.get(k); break
+        elif isinstance(d,list): rows=d
         out=[]
         for o in rows or []:
             if not isinstance(o,dict):continue
-            t=o.get('title'); p=clean_price(o.get('price')); u=o.get('url')
+            t=o.get('title') or o.get('name') or o.get('product_name')
+            u=o.get('url') or o.get('product_url') or o.get('link')
+            rawp=o.get('price_value')
+            if rawp is None: rawp=o.get('price')
+            if rawp is None: rawp=o.get('sale_price')
+            if rawp is None: rawp=o.get('discounted_price')
+            p=clean_price(rawp)
             if p and u and same_model(title,t):
                 out.append({'source':'n11','price':p,'url':u,'title':t,
-                            'product_id':o.get('product_id')})
+                            'product_id':o.get('product_id') or o.get('id'),
+                            'verification':'marketplace_exact_model'})
         return sorted(out,key=lambda x:x['price'])[:1]
     except Exception:return []
 
@@ -276,7 +288,7 @@ def searxng_discover(base):
     # SearXNG query already returns multiple Turkish shops; site-specific deep
     # searches belong in background monitoring, not the interactive request.
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.53','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.54','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -453,7 +465,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.53')
+def health():return jsonify(ok=True,service='cebimde',version='3.54')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -523,7 +535,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.53','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.54','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -531,7 +543,7 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.53',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.54',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
@@ -549,11 +561,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.53',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.54',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.53',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.54',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
