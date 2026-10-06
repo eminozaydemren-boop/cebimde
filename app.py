@@ -438,7 +438,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.41')
+def health():return jsonify(ok=True,service='cebimde',version='3.42')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -507,7 +507,7 @@ def debug_web():
     if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
     base={'title':model,'mpn':model_token(model)}
     q='"'+model+'" fiyat satın al Türkiye'
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.41','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.42','Accept-Language':'tr-TR,tr;q=0.9'}
     found=[]; seen=set()
     try:
         for page in (1,2):
@@ -564,7 +564,7 @@ def debug_web():
         # sanitized slice around the first result marker to identify the exact
         # result-link markup used by this image version.
         if not found and 'r' in locals() and r is not None:
-            anchors=re.findall(r'<a\\b[^>]*?href\\s*=\\s*[\\\"\\\']([^\\\"\\\']+)[\\\"\\\']',r.text,re.I)
+            anchors=re.findall(r'href\\s*=\\s*["\\\']([^"\\\']+)["\\\']',r.text,re.I)
             debug_meta['anchor_count']=len(anchors)
             debug_meta['absolute_anchor_count']=sum(1 for x in anchors if html.unescape(x).startswith(('http://','https://')))
             debug_meta['ut12d_present']='ut12d' in r.text.lower()
