@@ -166,9 +166,24 @@ def verify_external_offer(base,url):
         final=(urlparse(r.url).hostname or '').lower()
         if not final:return None
         p=extract_product(r.text,r.url)
-        if not p.get('price') or not identity_match(base,p):return None
-        return {'source':final.replace('www.',''),'price':p['price'],'url':r.url,'title':p.get('title'),
-                'gtin':p.get('gtin'),'mpn':p.get('mpn')}
+        if p.get('price') and identity_match(base,p):
+            return {'source':final.replace('www.',''),'price':p['price'],'url':r.url,'title':p.get('title'),
+                    'gtin':p.get('gtin'),'mpn':p.get('mpn')}
+        # Fallback for shops without JSON-LD offers: exact model + explicit TL amount.
+        page=html.unescape(re.sub(r'<[^>]+>',' ',r.text))
+        model=model_token((base or {}).get('title') or '') or str((base or {}).get('mpn') or '').strip()
+        norm_model=re.sub(r'[^A-Z0-9]','',model.upper())
+        norm_page=re.sub(r'[^A-Z0-9]','',page.upper())
+        if norm_model and norm_model in norm_page:
+            vals=[]
+            pat=r'(?<!\\d)(\\d{1,3}(?:[.\\s]\\d{3})*(?:,\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)\\s*(?:TL|₺)'
+            for m in re.finditer(pat,page,re.I):
+                v=clean_price(m.group(1))
+                if v and 10<=v<=1000000:vals.append(v)
+            if vals:
+                return {'source':final.replace('www.',''),'price':min(vals),'url':r.url,
+                        'title':p.get('title') or model,'mpn':model}
+        return None
     except Exception:return None
 
 def discover_web_candidates(base):
