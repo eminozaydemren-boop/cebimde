@@ -48,7 +48,7 @@ def model_token(title):
     s=(title or '').upper()
     toks=re.findall(r'(?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*[0-9])[A-Z0-9-]{4,}',s)
     # Some stores write model codes with a space/hyphen: "UT 12D".
-    for m in re.finditer(r'\\b([A-Z]{1,5})[ -]+([0-9]{1,4}[A-Z]{1,4})\\b',s):
+    for m in re.finditer(r'\b([A-Z]{1,5})[ -]+([0-9]{1,4}[A-Z]{1,4})\b',s):
         toks.append(m.group(1)+m.group(2))
     bad={'1000V','600V','220V','90V'}
     toks=[x for x in toks if x.replace('-','') not in bad]
@@ -306,7 +306,7 @@ def hepsiburada_public_price(title):
         u='https://www.hepsiburada.com/ara?q='+quote_plus(title)
         r=requests.get(u,headers=HEADERS,timeout=6); r.raise_for_status()
         text=html.unescape(re.sub(r'<[^>]+>',' ',r.text))
-        text=re.sub(r'\\s+',' ',text)
+        text=re.sub(r'\s+',' ',text)
         m=re.search(r'Sonoff\\s+ZigBee?\\s+Mini\\s+L2\\s+Nötrsüz\\s+Akıllı\\s+Röle.{0,900}?([0-9]{1,3}(?:\\.[0-9]{3})*,[0-9]{2})\\s*TL',text,re.I)
         if m:
             price=clean_price(m.group(1))
@@ -341,7 +341,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.10')
+def health():return jsonify(ok=True,service='cebimde',version='3.11')
 
 @app.get('/api/product')
 def product():
