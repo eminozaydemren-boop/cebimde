@@ -223,18 +223,31 @@ def searxng_discover(base):
     needle=gtin or mpn or model
     if not needle:return []
     q=' '.join(x for x in [brand,needle,'satın al fiyat'] if x)
+    params={'q':q,'language':'tr-TR','safesearch':1}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.8','Accept-Language':'tr-TR,tr;q=0.9'}
+    urls=[]
     try:
-        r=requests.get(endpoint+'/search',params={'q':q,'format':'json','language':'tr-TR','safesearch':1},
-                       headers={'Accept':'application/json','User-Agent':'CEBIMDE/3.7'},timeout=8)
-        r.raise_for_status(); rows=(r.json().get('results') or [])
+        # Prefer JSON when the instance enables it.
+        r=requests.get(endpoint+'/search',params=dict(params,format='json'),
+                       headers=dict(headers,Accept='application/json'),timeout=15)
+        if r.ok and 'json' in (r.headers.get('content-type') or '').lower():
+            urls=[(row or {}).get('url') for row in (r.json().get('results') or [])[:40]]
+        else:
+            # Default SearXNG installations often expose HTML only. Parse only
+            # outbound http(s) result links, then live-verify each merchant page.
+            r=requests.get(endpoint+'/search',params=params,
+                           headers=dict(headers,Accept='text/html'),timeout=20)
+            r.raise_for_status()
+            hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            urls=[html.unescape(u) for u in hrefs if u.startswith(('http://','https://'))]
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org')
         known=('hepsiburada.com','trendyol.com','n11.com','amazon.com.tr')
-        for row in rows[:30]:
-            u=(row or {}).get('url')
+        searx_host=(urlparse(endpoint).hostname or '').lower().replace('www.','')
+        for u in urls:
             if not u or u in seen:continue
             seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
-            if not host or any(x in host for x in blocked) or any(x in host for x in known):continue
+            if not host or host==searx_host or any(x in host for x in blocked) or any(x in host for x in known):continue
             v=verify_external_offer(base,u)
             if v:out.append(v)
             if len(out)>=8:break
@@ -304,7 +317,7 @@ def matched_offers(title, base=None):
     if base:
         offers+=discover_web_candidates(base)
         offers+=brave_discover(base)
-        offers+=searxng_discover(base)+discover_trendyol(title)
+        offers+=searxng_discover(base)
     if strict_zbmini_l2(title):
         sources=[('Bilteknik','https://bilteknik.com.tr/urun/sonoff-zbminil2-akilli-ev-rolesi')]
         for source,url in sources:
@@ -325,7 +338,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.7')
+def health():return jsonify(ok=True,service='cebimde',version='3.8')
 
 @app.get('/api/product')
 def product():
@@ -348,7 +361,10 @@ def product():
                 hb=reef_hepsiburada(None,target)
             if hb and not title:title=hb.get('title')
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
-        offers=matched_offers(title,input_product if input_product else {'title':title})
+        base=dict(input_product or {})
+        base['title']=base.get('title') or title
+        base['mpn']=base.get('mpn') or model_token(title)
+        offers=matched_offers(title,base)
         input_price=input_product.get('price')
         if hb:
             input_price=hb['price']
