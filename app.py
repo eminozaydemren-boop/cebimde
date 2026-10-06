@@ -258,6 +258,30 @@ def searxng_discover(base):
     except Exception:return []
 
 
+def reef_hepsiburada_offers(sku, url):
+    key=os.getenv('REEF_API_KEY','').strip()
+    if not key or not sku:return None
+    try:
+        r=requests.post('https://api.reefapi.com/hepsiburada/v1/product/offers',
+            headers={'x-api-key':key,'content-type':'application/json'},
+            json={'sku':sku},timeout=15)
+        r.raise_for_status(); j=r.json()
+        if not j.get('ok'):return None
+        d=j.get('data') or {}
+        candidates=[]
+        for o in walk(d):
+            if not isinstance(o,dict):continue
+            price=clean_price(o.get('price'))
+            if not price:continue
+            order=o.get('buybox_order')
+            candidates.append((order if isinstance(order,(int,float)) else 9999,price,o))
+        if not candidates:return None
+        candidates.sort(key=lambda x:(x[0],x[1]))
+        _,price,o=candidates[0]
+        return {'source':'Hepsiburada','price':price,'url':url,
+                'title':o.get('title') or o.get('name') or sku,'sku':sku}
+    except Exception:return None
+
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
     p=extract_product(r.text,url)
@@ -269,7 +293,7 @@ def reef_hepsiburada(sku, url):
     if not key:return None
     try:
         payload={'sku':sku} if sku else {'url':url}
-        payload['max_rotations']=1
+        payload['max_rotations']=3
         r=requests.post('https://api.reefapi.com/hepsiburada/v1/product/detail',
             headers={'x-api-key':key,'content-type':'application/json'},
             json=payload,timeout=12)
@@ -341,7 +365,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.11')
+def health():return jsonify(ok=True,service='cebimde',version='3.12')
 
 @app.get('/api/product')
 def product():
@@ -360,6 +384,8 @@ def product():
             # Reef accepts the original product URL too. Some HB URLs expose a
             # product code that is not the same SKU field returned in nested data.
             hb=reef_hepsiburada(sku,target)
+            if not hb and sku:
+                hb=reef_hepsiburada_offers(sku,target)
             if not hb and sku:
                 hb=reef_hepsiburada(None,target)
             if hb and not title:title=hb.get('title')
