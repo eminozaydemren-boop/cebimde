@@ -372,7 +372,7 @@ def product():
         # to query and verify price providers.
         if not title:
             slug=html.unescape((p.path or '').strip('/').split('-p-')[0]).replace('-',' ')
-            slug=re.sub(r'\\s+',' ',slug).strip()
+            slug=re.sub(r'\s+',' ',slug).strip()
             recovered_model=model_token(slug)
             if recovered_model:
                 title=slug
