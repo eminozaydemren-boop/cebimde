@@ -212,6 +212,16 @@ def identity_match(base,cand):
     if not same_model(bt,ct):return False
     bb=re.sub(r'[^A-Z0-9]','',str(base.get('brand') or '').upper())
     cb=re.sub(r'[^A-Z0-9]','',str(cand.get('brand') or '').upper())
+    # Marketplace input pages sometimes omit brand metadata. Infer only
+    # a known explicit manufacturer word from the verified product title.
+    if not bb:
+        bt_norm=re.sub(r'[^A-Z0-9]','',bt.upper())
+        if 'UNIT' in bt_norm:bb='UNIT'
+        elif 'SONOFF' in bt_norm:bb='SONOFF'
+    if not cb:
+        ct_norm=re.sub(r'[^A-Z0-9]','',ct.upper())
+        if 'UNIT' in ct_norm:cb='UNIT'
+        elif 'SONOFF' in ct_norm:cb='SONOFF'
     if not bb or not cb or bb!=cb:return False
     low=ct.lower()
     risky=('2 adet','2li','2 li','3 adet','3lu','3 lu','paket','set ','yedek','aksesuar','kablo','prob','adapt')
@@ -304,7 +314,7 @@ def searxng_discover(base):
     # SearXNG query already returns multiple Turkish shops; site-specific deep
     # searches belong in background monitoring, not the interactive request.
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.61','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.62','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -486,7 +496,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.61')
+def health():return jsonify(ok=True,service='cebimde',version='3.62')
 
 @app.get('/api/debug/n11')
 def debug_n11():
@@ -516,7 +526,7 @@ def debug_n11():
                 'price_present':clean_price(raw) is not None,
                 'url_present':bool(x.get('url') or x.get('product_url') or x.get('link')),
                 'fields':list(x.keys())[:20]})
-        return jsonify(ok=True,version='3.61',http_status=r.status_code,reef_ok=j.get('ok') if isinstance(j,dict) else None,
+        return jsonify(ok=True,version='3.62',http_status=r.status_code,reef_ok=j.get('ok') if isinstance(j,dict) else None,
             error=str(j.get('error') or j.get('message') or '')[:180] if isinstance(j,dict) else '',
             data_type=type(d).__name__,data_keys=list(d.keys())[:20] if isinstance(d,dict) else [],
             count=len(rows),sample=sample)
@@ -590,7 +600,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.61','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.62','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -598,7 +608,7 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.61',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.62',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
@@ -616,11 +626,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.61',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.62',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.61',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.62',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
