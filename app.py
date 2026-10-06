@@ -306,9 +306,26 @@ def reef_hepsiburada(sku, url):
         print('[HB_DETAIL] ok=',j.get('ok'),'error=',j.get('error') or j.get('message'),'data_type=',type(j.get('data')).__name__,flush=True)
         if not j.get('ok'):return None
         d=j.get('data') or {}
-        # Official Reef HB detail schema exposes these fields on the product row.
-        # Prefer the exact requested SKU, but allow URL-resolved detail when Reef
-        # has already returned a single product record.
+        # Reef HB detail currently wraps the actual product in data.product.
+        # Normalize that row first, then keep a recursive fallback for schema drift.
+        product=d.get('product') if isinstance(d,dict) else None
+        if isinstance(product,dict):
+            rsku=str(product.get('sku') or product.get('productSku') or '').upper()
+            title=product.get('title') or product.get('name') or product.get('productName')
+            price=None
+            for field in ('price','currentPrice','salePrice','discountedPrice','finalPrice'):
+                price=clean_price(product.get(field))
+                if price:break
+            if not price:
+                for o in walk(product):
+                    if not isinstance(o,dict):continue
+                    for field in ('price','currentPrice','salePrice','discountedPrice','finalPrice'):
+                        price=clean_price(o.get(field))
+                        if price:break
+                    if price:break
+            if price and (not sku or not rsku or rsku==sku.upper()):
+                return {'source':'Hepsiburada','price':price,'url':url,
+                        'title':title or sku,'sku':rsku or sku}
         if isinstance(d,dict):
             rsku=str(d.get('sku') or '').upper()
             title=d.get('title') or d.get('name')
@@ -373,7 +390,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.16')
+def health():return jsonify(ok=True,service='cebimde',version='3.17')
 
 @app.get('/api/debug/hb')
 def debug_hb():
