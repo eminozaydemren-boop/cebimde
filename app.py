@@ -283,11 +283,11 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.46','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.47','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
-                 'pinterest.com','tiktok.com','linkedin.com')
+                 'pinterest.com','tiktok.com','linkedin.com','web.archive.org','archive.org')
         searx_host=(urlparse(endpoint).hostname or '').lower().replace('www.','')
         for q in queries:
             params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1}
@@ -304,10 +304,15 @@ def searxng_discover(base):
                     r=None
             if not r or not r.ok:continue
             urls=searx_result_urls(r.text,endpoint)
+            checked=0
             for u in urls:
                 if not u or u in seen:continue
                 seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
                 if not host or host==searx_host or any(x in host for x in blocked):continue
+                # Verify only a bounded set of unique live shop pages per query.
+                # Archive/navigation noise is discarded before any page fetch.
+                checked+=1
+                if checked>12:break
                 v=verify_external_offer(base,u)
                 if v:out.append(v)
                 if len(out)>=16:return sorted(out,key=lambda x:x['price'])
@@ -447,7 +452,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.46')
+def health():return jsonify(ok=True,service='cebimde',version='3.47')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -517,7 +522,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.46','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.47','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -525,7 +530,7 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.46',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.47',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
@@ -543,11 +548,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.46',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.47',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.46',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.47',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
