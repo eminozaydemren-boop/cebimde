@@ -32,6 +32,8 @@ def searx_result_urls(body, endpoint):
     return out
 
 app=Flask(__name__, static_folder='web', static_url_path='')
+from watch_store import watch_api
+app.register_blueprint(watch_api)
 ALLOWED={'www.hepsiburada.com','hepsiburada.com','www.amazon.com.tr','amazon.com.tr','www.trendyol.com','trendyol.com','www.n11.com','n11.com'}
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36','Accept-Language':'tr-TR,tr;q=0.9,en;q=0.7'}
 
