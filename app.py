@@ -225,35 +225,48 @@ def searxng_discover(base):
     brand=str((base or {}).get('brand') or '').strip()
     needle=gtin or mpn or model
     if not needle:return []
-    q=' '.join(x for x in [brand,needle,'satın al fiyat'] if x)
-    params={'q':q,'language':'tr-TR','safesearch':1}
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.8','Accept-Language':'tr-TR,tr;q=0.9'}
+
+    # Use several buying-oriented queries and the first two result pages.
+    # SearXNG is discovery only: every external offer still has to pass our
+    # live page + exact product identity verification before it is displayed.
+    queries=[]
+    for q in (
+        ' '.join(x for x in [brand,needle,'satın al fiyat'] if x),
+        ' '.join(x for x in [needle,'fiyat Türkiye'] if x),
+        ' '.join(x for x in ['"'+needle+'"','stokta'] if x),
+    ):
+        if q and q not in queries:queries.append(q)
+
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.18','Accept-Language':'tr-TR,tr;q=0.9'}
     urls=[]
     try:
-        # Prefer JSON when the instance enables it.
-        r=requests.get(endpoint+'/search',params=dict(params,format='json'),
-                       headers=dict(headers,Accept='application/json'),timeout=15)
-        if r.ok and 'json' in (r.headers.get('content-type') or '').lower():
-            urls=[(row or {}).get('url') for row in (r.json().get('results') or [])[:40]]
-        else:
-            # Default SearXNG installations often expose HTML only. Parse only
-            # outbound http(s) result links, then live-verify each merchant page.
-            r=requests.get(endpoint+'/search',params=params,
-                           headers=dict(headers,Accept='text/html'),timeout=20)
-            r.raise_for_status()
-            hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
-            urls=[html.unescape(u) for u in hrefs if u.startswith(('http://','https://'))]
+        for q in queries:
+            for page in (1,2):
+                params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':page}
+                r=requests.get(endpoint+'/search',params=dict(params,format='json'),
+                               headers=dict(headers,Accept='application/json'),timeout=15)
+                if r.ok and 'json' in (r.headers.get('content-type') or '').lower():
+                    urls.extend((row or {}).get('url') for row in (r.json().get('results') or [])[:50])
+                else:
+                    r=requests.get(endpoint+'/search',params=params,
+                                   headers=dict(headers,Accept='text/html'),timeout=20)
+                    r.raise_for_status()
+                    hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+                    urls.extend(html.unescape(u) for u in hrefs if u.startswith(('http://','https://')))
+
         seen=set(); out=[]
-        blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org')
+        blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
+                 'pinterest.com','tiktok.com','linkedin.com')
         known=('hepsiburada.com','trendyol.com','n11.com','amazon.com.tr')
         searx_host=(urlparse(endpoint).hostname or '').lower().replace('www.','')
         for u in urls:
             if not u or u in seen:continue
-            seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
+            seen.add(u)
+            host=(urlparse(u).hostname or '').lower().replace('www.','')
             if not host or host==searx_host or any(x in host for x in blocked) or any(x in host for x in known):continue
             v=verify_external_offer(base,u)
             if v:out.append(v)
-            if len(out)>=8:break
+            if len(out)>=15:break
         return out
     except Exception:return []
 
@@ -390,7 +403,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.17')
+def health():return jsonify(ok=True,service='cebimde',version='3.18')
 
 @app.get('/api/debug/hb')
 def debug_hb():
