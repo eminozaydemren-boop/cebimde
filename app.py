@@ -364,6 +364,15 @@ def product():
         # a successful Reef detail response is authoritative for the submitted URL.
         if hb and hb.get('title'):
             title=hb['title']
+        # Last-resort identity recovery from the submitted marketplace URL.
+        # We still never invent a price: this only recovers the model/title needed
+        # to query and verify price providers.
+        if not title:
+            slug=html.unescape((p.path or '').strip('/').split('-p-')[0]).replace('-',' ')
+            slug=re.sub(r'\\s+',' ',slug).strip()
+            recovered_model=model_token(slug)
+            if recovered_model:
+                title=slug
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
         base=dict(input_product or {})
         base['title']=title
