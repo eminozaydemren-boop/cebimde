@@ -425,7 +425,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.30')
+def health():return jsonify(ok=True,service='cebimde',version='3.31')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -494,7 +494,7 @@ def debug_web():
     if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
     base={'title':model,'mpn':model_token(model)}
     q='"'+model+'" fiyat satın al Türkiye'
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.26','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.31','Accept-Language':'tr-TR,tr;q=0.9','X-Forwarded-For':'127.0.0.1','X-Real-IP':'127.0.0.1'}
     found=[]; seen=set()
     try:
         for page in (1,2):
@@ -506,14 +506,19 @@ def debug_web():
             hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
             for raw in hrefs:
                 u=html.unescape(raw)
+                if not u.startswith(('http://','https://')):
+                    m=re.search(r'(?:[?&]|^)url=([^&]+)',u,re.I)
+                    if m:
+                        try:
+                            from urllib.parse import unquote
+                            u=unquote(m.group(1))
+                        except Exception:continue
                 if not u.startswith(('http://','https://')) or u in seen:continue
                 seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
                 if not host or host==(urlparse(endpoint).hostname or '').lower().replace('www.',''):continue
                 row={'host':host,'url':u,'status':'aday'}
                 if any(x in host for x in ('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org','pinterest.com','tiktok.com','linkedin.com')):
                     row['status']='engelli alan'; found.append(row); continue
-                if any(x in host for x in ('hepsiburada.com','trendyol.com','n11.com','amazon.com.tr')):
-                    row['status']='ozel kaynakla taraniyor'; found.append(row); continue
                 try:
                     rr=requests.get(u,headers=HEADERS,timeout=8,allow_redirects=True); row['http_status']=rr.status_code
                     rr.raise_for_status(); p=extract_product(rr.text,rr.url)
