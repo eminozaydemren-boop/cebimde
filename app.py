@@ -255,7 +255,7 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.34','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.35','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -438,7 +438,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.34')
+def health():return jsonify(ok=True,service='cebimde',version='3.35')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -507,7 +507,7 @@ def debug_web():
     if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
     base={'title':model,'mpn':model_token(model)}
     q='"'+model+'" fiyat satın al Türkiye'
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.34','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.35','Accept-Language':'tr-TR,tr;q=0.9'}
     found=[]; seen=set()
     try:
         for page in (1,2):
@@ -525,6 +525,12 @@ def debug_web():
                                http_status=(r.status_code if r is not None else None),
                                search_url=(r.url if r is not None else endpoint+'/search'),
                                searxng_host=(urlparse(endpoint).hostname or '')),502
+            # Expose safe response diagnostics so an empty candidate list can
+            # be distinguished from an HTML parser failure.
+            if page==1:
+                debug_meta={'html_len':len(r.text),'content_type':r.headers.get('content-type'),
+                            'final_url':r.url,'has_result_marker':bool(re.search(r'result|article|url_wrapper',r.text,re.I)),
+                            'html_head':re.sub(r'\\s+',' ',r.text[:500])}
             hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
             for raw in hrefs:
                 u=html.unescape(raw)
@@ -554,7 +560,7 @@ def debug_web():
                 found.append(row)
                 if len(found)>=30:break
             if len(found)>=30:break
-        return jsonify(ok=True,model=model,query=q,candidates=found,counts={s:sum(1 for x in found if x['status']==s) for s in set(x['status'] for x in found)})
+        return jsonify(ok=True,model=model,query=q,candidates=found,counts={s:sum(1 for x in found if x['status']==s) for s in set(x['status'] for x in found)},searxng_response=(debug_meta if 'debug_meta' in locals() else {}))
     except Exception as e:return jsonify(ok=False,error=type(e).__name__),502
 
 
