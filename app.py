@@ -255,7 +255,7 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.33','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.34','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -278,6 +278,10 @@ def searxng_discover(base):
             # SearXNG result links are not always direct absolute URLs. Parse
             # both normal hrefs and redirect-style ?url= links.
             hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            # Modern SearXNG themes can expose result URLs in data attributes
+            # or escaped JSON, not only anchor hrefs.
+            hrefs += re.findall(r'(?:data-url|data-href)=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            hrefs += re.findall(r'https?:\\/\\/[^"\\\'<>\\s]+',r.text,re.I)
             urls=[]
             for raw in hrefs:
                 u=html.unescape(raw)
@@ -434,7 +438,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.33')
+def health():return jsonify(ok=True,service='cebimde',version='3.34')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -503,7 +507,7 @@ def debug_web():
     if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
     base={'title':model,'mpn':model_token(model)}
     q='"'+model+'" fiyat satın al Türkiye'
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.33','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.34','Accept-Language':'tr-TR,tr;q=0.9'}
     found=[]; seen=set()
     try:
         for page in (1,2):
