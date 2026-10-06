@@ -255,7 +255,7 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.32','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.33','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -263,9 +263,18 @@ def searxng_discover(base):
         searx_host=(urlparse(endpoint).hostname or '').lower().replace('www.','')
         for q in queries:
             params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1}
-            r=requests.get(endpoint+'/search',params=params,
-                           headers=dict(headers,Accept='text/html'),timeout=8)
-            if not r.ok:continue
+            # Render Free can cold-start SearXNG in 50s+. Give the first
+            # request time to wake the service, then retry once before skipping.
+            r=None
+            for attempt in range(2):
+                try:
+                    r=requests.get(endpoint+'/search',params=params,
+                                   headers=dict(headers,Accept='text/html'),
+                                   timeout=65 if attempt==0 else 15)
+                    if r.ok:break
+                except requests.RequestException:
+                    r=None
+            if not r or not r.ok:continue
             # SearXNG result links are not always direct absolute URLs. Parse
             # both normal hrefs and redirect-style ?url= links.
             hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
@@ -425,7 +434,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.32')
+def health():return jsonify(ok=True,service='cebimde',version='3.33')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -494,15 +503,24 @@ def debug_web():
     if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
     base={'title':model,'mpn':model_token(model)}
     q='"'+model+'" fiyat satın al Türkiye'
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.32','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.33','Accept-Language':'tr-TR,tr;q=0.9'}
     found=[]; seen=set()
     try:
         for page in (1,2):
             params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':page}
-            r=requests.get(endpoint+'/search',params=params,headers=dict(headers,Accept='text/html'),timeout=20)
-            if not r.ok:
-                return jsonify(ok=False,error='SearXNG arama hatasi',http_status=r.status_code,
-                               search_url=r.url,searxng_host=(urlparse(endpoint).hostname or '')),502
+            r=None
+            for attempt in range(2):
+                try:
+                    r=requests.get(endpoint+'/search',params=params,headers=dict(headers,Accept='text/html'),
+                                   timeout=65 if attempt==0 else 15)
+                    if r.ok:break
+                except requests.RequestException:
+                    r=None
+            if not r or not r.ok:
+                return jsonify(ok=False,error='SearXNG arama hatasi',
+                               http_status=(r.status_code if r is not None else None),
+                               search_url=(r.url if r is not None else endpoint+'/search'),
+                               searxng_host=(urlparse(endpoint).hostname or '')),502
             hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
             for raw in hrefs:
                 u=html.unescape(raw)
