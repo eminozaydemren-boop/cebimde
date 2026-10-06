@@ -338,7 +338,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.8')
+def health():return jsonify(ok=True,service='cebimde',version='3.9')
 
 @app.get('/api/product')
 def product():
@@ -360,9 +360,13 @@ def product():
             if not hb and sku:
                 hb=reef_hepsiburada(None,target)
             if hb and not title:title=hb.get('title')
+        # Marketplace pages can block direct server fetches. For Hepsiburada,
+        # a successful Reef detail response is authoritative for the submitted URL.
+        if hb and hb.get('title'):
+            title=hb['title']
         if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
         base=dict(input_product or {})
-        base['title']=base.get('title') or title
+        base['title']=title
         base['mpn']=base.get('mpn') or model_token(title)
         offers=matched_offers(title,base)
         input_price=input_product.get('price')
