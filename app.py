@@ -255,7 +255,7 @@ def searxng_discover(base):
               'hepsiburada.com','n11.com','amazon.com.tr')
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
     queries += [' '.join(x for x in [brand,needle,'site:'+host] if x) for host in national]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.40','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.44','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -438,7 +438,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.43')
+def health():return jsonify(ok=True,service='cebimde',version='3.44')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -499,82 +499,55 @@ def debug_hb():
 
 @app.get('/api/debug/web')
 def debug_web():
-    # Safe diagnostics: show SearXNG candidates and why external verification rejects them.
+    # Minimal diagnostics. Never let this endpoint throw a Flask 500.
     model=request.args.get('model','').strip()
-    if not re.fullmatch(r'[A-Za-z0-9 ._-]{2,40}',model):
-        return jsonify(ok=False,error='Gecersiz model'),400
-    endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
-    if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
-    base={'title':model,'mpn':model_token(model)}
-    q='"'+model+'" fiyat satın al Türkiye'
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.43','Accept-Language':'tr-TR,tr;q=0.9'}
-    found=[]; seen=set()
     try:
-        for page in (1,2):
-            params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':page}
-            r=None
-            for attempt in range(2):
-                try:
-                    r=requests.get(endpoint+'/search',params=params,headers=dict(headers,Accept='text/html'),
-                                   timeout=65 if attempt==0 else 15)
-                    if r.ok:break
-                except requests.RequestException:
-                    r=None
-            if not r or not r.ok:
-                return jsonify(ok=False,error='SearXNG arama hatasi',
-                               http_status=(r.status_code if r is not None else None),
-                               search_url=(r.url if r is not None else endpoint+'/search'),
-                               searxng_host=(urlparse(endpoint).hostname or '')),502
-            # Expose safe response diagnostics so an empty candidate list can
-            # be distinguished from an HTML parser failure.
-            if page==1:
-                debug_meta={'html_len':len(r.text),'content_type':r.headers.get('content-type'),
-                            'final_url':r.url,'has_result_marker':bool(re.search(r'result|article|url_wrapper',r.text,re.I)),
-                            'html_head':re.sub(r'\\s+',' ',r.text[:500])}
-            hrefs=re.findall(r'<a[^>]+href=["\']([^"\']+)["\']',r.text,re.I)
-            for raw in hrefs:
-                u=html.unescape(raw)
-                if not u.startswith(('http://','https://')):
-                    m=re.search(r'(?:[?&]|^)url=([^&]+)',u,re.I)
-                    if m:
-                        try:
-                            from urllib.parse import unquote
-                            u=unquote(m.group(1))
-                        except Exception:continue
-                if not u.startswith(('http://','https://')) or u in seen:continue
-                seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
-                if not host or host==(urlparse(endpoint).hostname or '').lower().replace('www.',''):continue
-                row={'host':host,'url':u,'status':'aday'}
-                if any(x in host for x in ('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org','pinterest.com','tiktok.com','linkedin.com')):
-                    row['status']='engelli alan'; found.append(row); continue
-                try:
-                    rr=requests.get(u,headers=HEADERS,timeout=8,allow_redirects=True); row['http_status']=rr.status_code
-                    rr.raise_for_status(); p=extract_product(rr.text,rr.url)
-                    row['parsed_title']=p.get('title'); row['parsed_price']=p.get('price')
-                    row['identity_match']=identity_match(base,p)
-                    if not p.get('price'):row['status']='fiyat okunamadi'
-                    elif not row['identity_match']:row['status']='urun kimligi eslesmedi'
-                    else:row['status']='dogrulandi'
-                except Exception as e:
-                    row['status']='sayfa okunamadi'; row['error']=type(e).__name__
-                found.append(row)
-                if len(found)>=30:break
-            if len(found)>=30:break
-        # If SearXNG returned HTML but no candidate URLs, expose a tiny
-        # sanitized slice around the first result marker to identify the exact
-        # result-link markup used by this image version.
-        if not found and 'r' in locals() and r is not None:
-            anchors=re.findall(r'href=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
-            debug_meta['anchor_count']=len(anchors)
-            debug_meta['absolute_anchor_count']=sum(1 for x in anchors if html.unescape(x).startswith(('http://','https://')))
-            debug_meta['ut12d_present']='ut12d' in r.text.lower()
-            debug_meta['no_results_present']=bool(re.search(r'no results|sonuç bulunamad|sonuc bulunamad',r.text,re.I))
-            debug_meta['sample_hrefs']=[html.unescape(x)[:220] for x in anchors[:20]]
-            m=re.search(r'UT12D',r.text,re.I)
-            if m:
-                debug_meta['model_markup']=re.sub(r'\\s+',' ',r.text[max(0,m.start()-500):m.start()+1200])
-        return jsonify(ok=True,model=model,query=q,candidates=found,counts={s:sum(1 for x in found if x['status']==s) for s in set(x['status'] for x in found)},searxng_response=(debug_meta if 'debug_meta' in locals() else {}))
-    except Exception as e:return jsonify(ok=False,error=type(e).__name__),502
+        if not re.fullmatch(r'[A-Za-z0-9 ._-]{2,40}',model):
+            return jsonify(ok=False,error='Gecersiz model'),400
+        endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
+        if not endpoint:
+            return jsonify(ok=False,error='SEARXNG_URL yok'),503
+        q='"'+model+'" fiyat satin al Turkiye'
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.44','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        try:
+            r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
+                           headers=headers,timeout=70)
+        except Exception as e:
+            return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
+        body=r.text or ''
+        # Avoid regex entirely here: collect absolute URLs with a small deterministic scanner.
+        urls=[]; seen=set()
+        for marker in ('https://','http://'):
+            pos=0
+            while True:
+                i=body.find(marker,pos)
+                if i<0: break
+                j=i
+                while j<len(body) and body[j] not in '"\\\'<> \\t\\r\\n':
+                    j+=1
+                u=html.unescape(body[i:j]).replace('\\\\/','/')
+                pos=max(j,i+len(marker))
+                if u and u not in seen:
+                    seen.add(u); urls.append(u)
+                if len(urls)>=80: break
+            if len(urls)>=80: break
+        host0=(urlparse(endpoint).hostname or '').lower().replace('www.','')
+        candidates=[]
+        for u in urls:
+            try:
+                host=(urlparse(u).hostname or '').lower().replace('www.','')
+            except Exception:
+                continue
+            if not host or host==host0: continue
+            if any(x in host for x in ('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org','pinterest.com','tiktok.com','linkedin.com')):
+                continue
+            candidates.append({'host':host,'url':u[:500]})
+            if len(candidates)>=30: break
+        return jsonify(ok=True,version='3.44',model=model,query=q,searxng_host=host0,
+                       http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
+                       candidates=candidates)
+    except Exception as e:
+        return jsonify(ok=False,version='3.44',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
