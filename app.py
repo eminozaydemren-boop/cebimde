@@ -194,33 +194,14 @@ def verify_external_offer(base,url):
         final=(urlparse(r.url).hostname or '').lower()
         if not final:return None
         p=extract_product(r.text,r.url)
+        # External web prices are accepted only from structured Product data.
+        # The product identity must independently match by GTIN/MPN/model.
+        # We intentionally do NOT infer a price from arbitrary nearby TL text:
+        # installments, shipping, accessories and campaign amounts can otherwise
+        # look like a much cheaper product price.
         if p.get('price') and identity_match(base,p):
             return {'source':final.replace('www.',''),'price':p['price'],'url':r.url,'title':p.get('title'),
-                    'gtin':p.get('gtin'),'mpn':p.get('mpn')}
-        # Fallback for shops without JSON-LD offers: exact model + nearby TL amount.
-        # Do NOT take the minimum TL value from the whole page (installments/accessories
-        # can be cheaper and would create a false product price).
-        page=html.unescape(re.sub(r'<[^>]+>',' ',r.text))
-        page=re.sub(r'\\s+',' ',page)
-        model=model_token((base or {}).get('title') or '') or str((base or {}).get('mpn') or '').strip()
-        norm_model=re.sub(r'[^A-Z0-9]','',model.upper())
-        norm_page=re.sub(r'[^A-Z0-9]','',page.upper())
-        if norm_model and norm_model in norm_page:
-            pat=r'(?<!\\d)(\\d{1,3}(?:[.\\s]\\d{3})*(?:,\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)\\s*(?:TL|₺)'
-            candidates=[]
-            for mm in re.finditer(re.escape(model),page,re.I):
-                lo=max(0,mm.start()-220); hi=min(len(page),mm.end()+650)
-                window=page[lo:hi]
-                for pm in re.finditer(pat,window,re.I):
-                    v=clean_price(pm.group(1))
-                    if v and 20<=v<=1000000:
-                        distance=abs((lo+pm.start())-mm.start())
-                        candidates.append((distance,v))
-            if candidates:
-                candidates.sort(key=lambda x:x[0])
-                price=candidates[0][1]
-                return {'source':final.replace('www.',''),'price':price,'url':r.url,
-                        'title':p.get('title') or model,'mpn':model}
+                    'gtin':p.get('gtin'),'mpn':p.get('mpn'),'verification':'structured_product'}
         return None
     except Exception:return None
 
@@ -285,7 +266,7 @@ def searxng_discover(base):
     # SearXNG query already returns multiple Turkish shops; site-specific deep
     # searches belong in background monitoring, not the interactive request.
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.49','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.50','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -454,7 +435,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.49')
+def health():return jsonify(ok=True,service='cebimde',version='3.50')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -524,7 +505,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.49','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.50','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -532,7 +513,7 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.49',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.50',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
@@ -550,11 +531,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.49',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.50',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.49',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.50',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
