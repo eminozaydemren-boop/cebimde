@@ -394,7 +394,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.26')
+def health():return jsonify(ok=True,service='cebimde',version='3.27')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -425,6 +425,22 @@ def debug_hb():
                         item['title']=d.get('title') or d.get('name')
                         item['price']=d.get('price')
                         if isinstance(d.get('offers'),list):item['offers_count']=len(d.get('offers'))
+                        # Safe nested diagnostics: expose only product field names and
+                        # price-like values, never credentials or the full provider payload.
+                        product=d.get('product')
+                        if isinstance(product,dict):
+                            item['product_keys']=list(product.keys())[:60]
+                            item['product_title']=product.get('title') or product.get('name') or product.get('productName')
+                            item['product_sku']=product.get('sku') or product.get('productSku')
+                            price_fields={}
+                            for k,v in product.items():
+                                lk=str(k).lower()
+                                if any(x in lk for x in ('price','amount','sale','discount','final','current')):
+                                    if isinstance(v,(str,int,float,bool)) or v is None:
+                                        price_fields[str(k)]=v
+                                    elif isinstance(v,dict):
+                                        price_fields[str(k)]={str(kk):vv for kk,vv in list(v.items())[:20] if isinstance(vv,(str,int,float,bool)) or vv is None}
+                            item['product_price_fields']=price_fields
                     elif isinstance(d,list):
                         item['data_count']=len(d)
                         if d and isinstance(d[0],dict):item['first_keys']=list(d[0].keys())[:25]
