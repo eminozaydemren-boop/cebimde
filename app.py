@@ -403,7 +403,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.18')
+def health():return jsonify(ok=True,service='cebimde',version='3.19')
 
 @app.get('/api/debug/hb')
 def debug_hb():
@@ -444,6 +444,51 @@ def debug_hb():
         except Exception as e:
             out[label]={'exception':type(e).__name__,'message':str(e)[:300]}
     return jsonify(out)
+
+
+@app.get('/api/debug/web')
+def debug_web():
+    # Safe diagnostics: show SearXNG candidates and why external verification rejects them.
+    model=request.args.get('model','').strip()
+    if not re.fullmatch(r'[A-Za-z0-9 ._-]{2,40}',model):
+        return jsonify(ok=False,error='Gecersiz model'),400
+    endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
+    if not endpoint:return jsonify(ok=False,error='SEARXNG_URL yok'),503
+    base={'title':model,'mpn':model_token(model)}
+    q='"'+model+'" fiyat satın al Türkiye'
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.19','Accept-Language':'tr-TR,tr;q=0.9'}
+    found=[]; seen=set()
+    try:
+        for page in (1,2):
+            params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':page}
+            r=requests.get(endpoint+'/search',params=params,headers=dict(headers,Accept='text/html'),timeout=20)
+            r.raise_for_status()
+            hrefs=re.findall(r'<a\\b[^>]*\\bhref=["\\\']([^"\\\']+)["\\\']',r.text,re.I)
+            for raw in hrefs:
+                u=html.unescape(raw)
+                if not u.startswith(('http://','https://')) or u in seen:continue
+                seen.add(u); host=(urlparse(u).hostname or '').lower().replace('www.','')
+                if not host or host==(urlparse(endpoint).hostname or '').lower().replace('www.',''):continue
+                row={'host':host,'url':u,'status':'aday'}
+                if any(x in host for x in ('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org','pinterest.com','tiktok.com','linkedin.com')):
+                    row['status']='engelli alan'; found.append(row); continue
+                if any(x in host for x in ('hepsiburada.com','trendyol.com','n11.com','amazon.com.tr')):
+                    row['status']='ozel kaynakla taraniyor'; found.append(row); continue
+                try:
+                    rr=requests.get(u,headers=HEADERS,timeout=8,allow_redirects=True); row['http_status']=rr.status_code
+                    rr.raise_for_status(); p=extract_product(rr.text,rr.url)
+                    row['parsed_title']=p.get('title'); row['parsed_price']=p.get('price')
+                    row['identity_match']=identity_match(base,p)
+                    if not p.get('price'):row['status']='fiyat okunamadi'
+                    elif not row['identity_match']:row['status']='urun kimligi eslesmedi'
+                    else:row['status']='dogrulandi'
+                except Exception as e:
+                    row['status']='sayfa okunamadi'; row['error']=type(e).__name__
+                found.append(row)
+                if len(found)>=30:break
+            if len(found)>=30:break
+        return jsonify(ok=True,model=model,query=q,candidates=found,counts={s:sum(1 for x in found if x['status']==s) for s in set(x['status'] for x in found)})
+    except Exception as e:return jsonify(ok=False,error=type(e).__name__),502
 
 
 @app.get('/api/product')
