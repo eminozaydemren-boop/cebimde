@@ -290,7 +290,7 @@ def searxng_discover(base):
     # SearXNG query already returns multiple Turkish shops; site-specific deep
     # searches belong in background monitoring, not the interactive request.
     queries=[' '.join(x for x in [brand,needle,'satın al fiyat Türkiye'] if x)]
-    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.56','Accept-Language':'tr-TR,tr;q=0.9'}
+    headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.57','Accept-Language':'tr-TR,tr;q=0.9'}
     try:
         seen=set(); out=[]
         blocked=('youtube.com','facebook.com','instagram.com','x.com','twitter.com','wikipedia.org',
@@ -467,7 +467,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.56')
+def health():return jsonify(ok=True,service='cebimde',version='3.57')
 
 @app.get('/api/debug/n11')
 def debug_n11():
@@ -497,7 +497,7 @@ def debug_n11():
                 'price_present':clean_price(raw) is not None,
                 'url_present':bool(x.get('url') or x.get('product_url') or x.get('link')),
                 'fields':list(x.keys())[:20]})
-        return jsonify(ok=True,version='3.56',http_status=r.status_code,reef_ok=j.get('ok') if isinstance(j,dict) else None,
+        return jsonify(ok=True,version='3.57',http_status=r.status_code,reef_ok=j.get('ok') if isinstance(j,dict) else None,
             error=str(j.get('error') or j.get('message') or '')[:180] if isinstance(j,dict) else '',
             data_type=type(d).__name__,data_keys=list(d.keys())[:20] if isinstance(d,dict) else [],
             count=len(rows),sample=sample)
@@ -571,7 +571,7 @@ def debug_web():
         if not endpoint:
             return jsonify(ok=False,error='SEARXNG_URL yok'),503
         q='"'+model+'" fiyat satin al Turkiye'
-        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.56','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
+        headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.57','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'}
         try:
             r=requests.get(endpoint+'/search',params={'q':q,'language':'tr-TR','safesearch':1,'categories':'general','pageno':1},
                            headers=headers,timeout=70)
@@ -579,7 +579,7 @@ def debug_web():
             return jsonify(ok=False,stage='searxng_request',error=type(e).__name__,message=str(e)[:300]),502
         body=r.text or ''
         if r.status_code >= 400:
-            return jsonify(ok=False,version='3.56',stage='searxng_http',http_status=r.status_code,
+            return jsonify(ok=False,version='3.57',stage='searxng_http',http_status=r.status_code,
                            searxng_host=(urlparse(endpoint).hostname or ''),
                            body_head=re.sub(r'\\s+',' ',body[:1200]),
                            content_type=r.headers.get('content-type')),200
@@ -597,11 +597,11 @@ def debug_web():
                 continue
             candidates.append({'host':host,'url':u[:500]})
             if len(candidates)>=30: break
-        return jsonify(ok=True,version='3.56',model=model,query=q,searxng_host=host0,
+        return jsonify(ok=True,version='3.57',model=model,query=q,searxng_host=host0,
                        http_status=r.status_code,html_len=len(body),absolute_urls=len(urls),
                        candidates=candidates)
     except Exception as e:
-        return jsonify(ok=False,version='3.56',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
+        return jsonify(ok=False,version='3.57',stage='debug_guard',error=type(e).__name__,message=str(e)[:300]),200
 
 
 @app.get('/api/product')
@@ -639,7 +639,11 @@ def product():
             recovered_model=model_token(slug)
             if recovered_model:
                 title=slug
-        if not title: raise ValueError('Ürün kimliği doğrulanamadı.')
+        # A marketplace SKU alone is not a product identity. Do not label a
+        # bare code as verified or compare unrelated marketplace results.
+        if not title or (sku and title.strip().upper()==sku):
+            raise ValueError('Ürün adı doğrulanamadı. Mağaza geçici olarak ürün bilgisini vermiyor; fiyat karşılaştırması yapılmadı.')
+
         base=dict(input_product or {})
         base['title']=title
         base['mpn']=base.get('mpn') or model_token(title)
