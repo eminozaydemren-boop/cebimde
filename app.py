@@ -282,7 +282,9 @@ def reef_hepsiburada_offers(sku, url):
         _,price,o=candidates[0]
         return {'source':'Hepsiburada','price':price,'url':url,
                 'title':o.get('title') or o.get('name') or sku,'sku':sku}
-    except Exception:return None
+    except Exception as e:
+        print('[HB_OFFERS_EXCEPTION]',type(e).__name__,str(e)[:300],flush=True)
+        return None
 
 def fetch_offer(url,source):
     r=requests.get(url,headers=HEADERS,timeout=6); r.raise_for_status()
@@ -323,7 +325,9 @@ def reef_hepsiburada(sku, url):
             if price and ((sku and rsku==sku.upper()) or (not sku and title)):
                 return {'source':'Hepsiburada','price':price,'url':url,
                         'title':title or sku,'sku':rsku or sku}
-    except Exception:return None
+    except Exception as e:
+        print('[HB_DETAIL_EXCEPTION]',type(e).__name__,str(e)[:300],flush=True)
+        return None
     return None
 
 def hepsiburada_public_price(title):
@@ -369,7 +373,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.14')
+def health():return jsonify(ok=True,service='cebimde',version='3.15')
 
 @app.get('/api/product')
 def product():
