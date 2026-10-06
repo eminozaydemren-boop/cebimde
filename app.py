@@ -265,9 +265,9 @@ def reef_hepsiburada_offers(sku, url):
         r=requests.post('https://api.reefapi.com/hepsiburada/v1/product/offers',
             headers={'x-api-key':key,'content-type':'application/json'},
             json={'sku':sku},timeout=15)
-        print('[HB detail] status=',r.status_code,'content_type=',r.headers.get('content-type'),flush=True)
+        print('[HB_OFFERS] status=',r.status_code,'content_type=',r.headers.get('content-type'),flush=True)
         r.raise_for_status(); j=r.json()
-        print('[HB detail] ok=',j.get('ok'),'error=',j.get('error') or j.get('message'),'data_type=',type(j.get('data')).__name__,flush=True)
+        print('[HB_OFFERS] ok=',j.get('ok'),'error=',j.get('error') or j.get('message'),'data_type=',type(j.get('data')).__name__,flush=True)
         if not j.get('ok'):return None
         d=j.get('data') or {}
         candidates=[]
@@ -299,7 +299,9 @@ def reef_hepsiburada(sku, url):
         r=requests.post('https://api.reefapi.com/hepsiburada/v1/product/detail',
             headers={'x-api-key':key,'content-type':'application/json'},
             json=payload,timeout=12)
+        print('[HB_DETAIL] status=',r.status_code,'content_type=',r.headers.get('content-type'),flush=True)
         r.raise_for_status(); j=r.json()
+        print('[HB_DETAIL] ok=',j.get('ok'),'error=',j.get('error') or j.get('message'),'data_type=',type(j.get('data')).__name__,flush=True)
         if not j.get('ok'):return None
         d=j.get('data') or {}
         # Official Reef HB detail schema exposes these fields on the product row.
@@ -367,7 +369,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.13')
+def health():return jsonify(ok=True,service='cebimde',version='3.14')
 
 @app.get('/api/product')
 def product():
