@@ -85,7 +85,9 @@ def compare(base):
             page=fetch_page(url,budget=5)
             if page:
                 result=verified_offer(page[0],page[1],base)
-                if result:return dict(result,source=urlparse(result['url']).hostname.removeprefix('www.'),title=base['title'])
+                if result:
+                    candidate=structured_product(page[0],page[1])
+                    return dict(result,source=urlparse(result['url']).hostname.removeprefix('www.'),title=candidate['title'])
         except Exception:pass
         return None
     # Four pages in parallel; discovery results alone never become prices.
@@ -118,6 +120,7 @@ def analyze_any_seller(target,hint=''):
         offers.append({'source':urlparse(source).hostname.removeprefix('www.'),'price':base['price'],'url':source,'title':base['title']})
     offers+=compare(base)
     offers=sorted({o['url']:o for o in offers}.values(),key=lambda o:o['price'])
+    if offers and not structured:base['title']=offers[0]['title']
     best=offers[0]['price'] if offers else None
     input_price=base.get('price')
     result={'title':base['title'],'input_source':urlparse(source).hostname.removeprefix('www.'),'input_url':target,
