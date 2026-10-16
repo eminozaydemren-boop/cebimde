@@ -84,3 +84,10 @@ def test_real_rsa_signature_and_claim_validation(monkeypatch,change):
     monkeypatch.setattr(auth,'jwks',lambda:Mock(get_signing_key_from_jwt=lambda token:Mock(key=key.public_key())))
     token=jwt.encode(payload,key,algorithm='RS256')
     assert auth.authorized('Bearer '+token)==(not change)
+
+
+def test_related_product_price_is_not_the_main_page_offer():
+    main={'@type':'Product','name':'Different product','url':URL,'offers':{'price':100,'priceCurrency':'TRY'}}
+    related={'@type':'Product','name':IDENTITY['title'],'brand':'Sonoff','mpn':'ZBMINI-L2','url':'https://www.robotistan.com/related','offers':{'price':50,'priceCurrency':'TRY'}}
+    body='<script type="application/ld+json">'+json.dumps([main,related])+'</script>'
+    assert pm.verified_offer(body,URL,IDENTITY) is None

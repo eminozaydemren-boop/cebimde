@@ -32,29 +32,11 @@ def public_page(url):
 
 
 def verified_offer(page,url,identity):
-    from app import walk,clean_price
-    from product_data import same_product
-    found=[]
-    for raw in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',page,re.I|re.S):
-        try:data=json.loads(html.unescape(raw).strip())
-        except (ValueError,TypeError):continue
-        for p in walk(data):
-            types=p.get('@type');types=types if isinstance(types,list) else [types]
-            if 'Product' not in types:continue
-            brand=p.get('brand');brand=brand.get('name') if isinstance(brand,dict) else brand
-            candidate={'title':p.get('name'),'brand':brand,'mpn':p.get('mpn'),
-                       'gtin':p.get('gtin13') or p.get('gtin14') or p.get('gtin12') or p.get('gtin8') or p.get('gtin')}
-            if not same_product(identity,candidate):continue
-            offers=p.get('offers') or [];offers=offers if isinstance(offers,list) else [offers]
-            for o in offers:
-                if not isinstance(o,dict) or o.get('@type')=='AggregateOffer':continue
-                if str(o.get('priceCurrency','')).upper() not in ('TRY','TL','₺'):continue
-                available=str(o.get('availability') or '').rsplit('/',1)[-1]
-                if available and available not in ('InStock','LimitedAvailability','OnlineOnly'):continue
-                price=clean_price(o.get('price'))
-                if price is not None and math.isfinite(price) and 0<price<100000000:
-                    found.append({'price':round(price,2),'url':url})
-    return min(found,key=lambda x:x['price']) if found else None
+    from product_data import structured_product,same_product
+    candidate=structured_product(page,url)
+    if candidate and candidate.get('price') is not None and same_product(identity,candidate):
+        return {'price':round(candidate['price'],2),'url':url}
+    return None
 
 
 def check_watch(title,url,meta):
