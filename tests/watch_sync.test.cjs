@@ -16,7 +16,7 @@ const base={id:'www.hepsiburada.com/a',url:'https://www.hepsiburada.com/a',title
 function server(){
  let rows=[];
  return {get rows(){return rows},async fetch(url,opts={}){
-  if(url.endsWith('/status'))return response({ok:true});
+  if(url.endsWith('/status'))return response({ok:true,monitoring:{lastRun:'2026-10-16T10:00:00Z'}});
   if(opts.method==='POST'){
    const p=JSON.parse(opts.body);rows=[{...p,id:'server-id',lastPrice:null,lastChecked:null}];return response({ok:true,id:'server-id'});
   }

@@ -1,0 +1,60 @@
+name: CEBIMDE free price watch
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/price-watch.yml']
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: cebimde-price-watch
+  cancel-in-progress: false
+jobs:
+  monitor:
+    if: github.repository == 'eminozaydemren-boop/cebimde'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Verify deployment and check due watches without paid APIs
+        shell: bash
+        run: |
+          python3 -u - <<'PY'
+          import json,os,time,urllib.request,urllib.parse,urllib.error
+          base='https://cebimde.onrender.com'
+          audience=base+'/price-watch'
+          def call(url,method='GET',token=None,timeout=25):
+              headers={'Accept':'application/json'}
+              if token:headers['Authorization']='Bearer '+token
+              req=urllib.request.Request(url,method=method,headers=headers)
+              with urllib.request.urlopen(req,timeout=timeout) as r:return json.load(r)
+          # Public repositories with standard Ubuntu runners only; no artifacts or caches.
+          # Wait for Render's automatic deployment on the initial workflow push.
+          for attempt in range(12):
+              try:
+                  health=call(base+'/health',timeout=20)
+                  if health.get('watchMonitoring')==1:break
+              except (urllib.error.URLError,TimeoutError,ValueError):pass
+              if attempt==11:raise SystemExit('Expected deployment is not ready; no scan was triggered.')
+              time.sleep(15)
+          oidc_url=os.environ['ACTIONS_ID_TOKEN_REQUEST_URL']+'&audience='+urllib.parse.quote(audience,safe='')
+          oidc=call(oidc_url,token=os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN'])['value']
+          print('::add-mask::'+oidc)
+          minted=time.monotonic()
+          processed=verified=notifications=0
+          for _ in range(30):
+              if time.monotonic()-minted>150:
+                  oidc=call(oidc_url,token=os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN'])['value']
+                  print('::add-mask::'+oidc)
+                  minted=time.monotonic()
+              result=call(base+'/api/watches/monitor/run',method='POST',token=oidc,timeout=25)
+              if not result.get('ok'):raise SystemExit('Monitor request failed.')
+              processed+=result.get('processed',0)
+              verified+=result.get('verified',0)
+              notifications+=result.get('notifications',0)
+              if result.get('processed',0)==0:break
+          # Only aggregate counters are public. No product URLs, titles, or owner keys.
+          print(json.dumps({'processed':processed,'verified':verified,'notifications':notifications}))
+          PY

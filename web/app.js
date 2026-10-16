@@ -37,7 +37,7 @@ async function serverWatch(method,path,body){
  const res=await fetch('/api/watches'+path,{method,headers:{'Content-Type':'application/json','X-Watch-Key':key},signal:AbortSignal.timeout(15000),body:body?JSON.stringify(body):undefined});
  const d=await res.json();if(!res.ok||!d.ok)throw Error(d.error||'Sunucu kaydı başarısız.');return d;
 }
-let syncPromise=null,syncRequested=false;
+let syncPromise=null,syncRequested=false,monitorLastRun=null;
 const deletingHunts=new Set();
 function syncHunts(){
  syncRequested=true;
@@ -48,6 +48,7 @@ function syncHunts(){
     syncRequested=false;
     const status=await fetch('/api/watches/status',{signal:AbortSignal.timeout(15000)});
     if(!status.ok)throw Error('Sunucu bağlantısı bekleniyor.');
+    const readiness=await status.json();monitorLastRun=readiness.monitoring?.lastRun||null;
     const remote=await serverWatch('GET','');
     const byUrl=new Map(remote.watches.map(w=>[huntId(w.url),w]));
     for(const h of readHunts()){
@@ -89,7 +90,7 @@ function updateHuntSnapshot(p,url){
 }
 function mountHuntControls(p,url){
  const section=document.createElement('section');section.className='huntsetup';
- section.innerHTML='<h3>🎯 Bu ürün için av başlat</h3><p>Hedef fiyatını belirle. Avın sunucuyla eşitlenir. Güncel fiyat için ürünü yeniden analiz et. Otomatik tarama ve kapalı uygulama bildirimleri henüz etkin değil.</p><label>Hedef fiyat (TL) <input id="huntTarget" type="number" min="0.01" step="0.01" placeholder="Örn. 300"></label><button type="button" id="saveHunt">🎯 Avı kaydet</button><div id="huntFeedback" role="status"></div>';
+ section.innerHTML='<h3>🎯 Bu ürün için av başlat</h3><p>Hedef fiyatını belirle. Avın sunucuyla eşitlenir. Güncel fiyat için ürünü yeniden analiz et. Açık mağaza verileri yaklaşık 6 saatte bir taranır. Hedef bildirimi site içinde gösterilir; telefon bildirimi gönderilmez.</p><label>Hedef fiyat (TL) <input id="huntTarget" type="number" min="0.01" step="0.01" placeholder="Örn. 300"></label><button type="button" id="saveHunt">🎯 Avı kaydet</button><div id="huntFeedback" role="status"></div>';
  q('#resultBody').appendChild(section);
  const id=huntId(url),existing=readHunts().find(h=>h.id===id);
  if(existing)section.querySelector('#huntTarget').value=existing.target;
@@ -118,7 +119,7 @@ function renderHuntList(){
   const title=document.createElement('strong');title.textContent=h.title;
   const detail=document.createElement('div');detail.textContent='Hedef: '+money(h.target)+' · Son görülen: '+(h.lastPrice==null?'Henüz kontrol edilmedi':money(h.lastPrice));
   const status=document.createElement('div');status.className='huntstate';status.textContent=h.lastPrice==null?'🎯 Güncel fiyat kontrolü bekleniyor':h.lastPrice<=h.target?'🎯 Son kontrolde hedef yakalandı!':'🎯 Avda · hedefe '+money(h.lastPrice-h.target)+' kaldı';
-  const when=document.createElement('small');when.textContent=(h.lastChecked?'Son kontrol: '+new Date(h.lastChecked).toLocaleString('tr-TR'):'Son kontrol: henüz yok')+' · '+(h.serverId&&!h.dirty?'Sunucuyla eşitlendi':'Cihazda kayıtlı; eşitleme bekleniyor')+' · Otomatik tarama kapalı';
+  const when=document.createElement('small');when.textContent=(h.lastChecked?'Son kontrol: '+new Date(h.lastChecked).toLocaleString('tr-TR'):'Son kontrol: henüz yok')+' · '+(h.serverId&&!h.dirty?'Sunucuyla eşitlendi':'Cihazda kayıtlı; eşitleme bekleniyor')+' · '+(h.monitorState==='unavailable'?'Son otomatik denemede fiyat doğrulanamadı':monitorLastRun?'Otomatik tarama etkin':'İlk otomatik tarama bekleniyor');
   const actions=document.createElement('div');actions.className='hunbuttons';
   const check=document.createElement('button');check.textContent='Fiyatı yeniden kontrol et';check.onclick=()=>{q('#url').value=h.url;q('#analyze').click();};
   const remove=document.createElement('button');remove.textContent='Avı sil';remove.onclick=async()=>{
@@ -132,7 +133,20 @@ function renderHuntList(){
    }catch(e){alert('Av silinemedi; kayıt korundu. '+e.message);}
    finally{deletingHunts.delete(h.id);remove.disabled=false;}
   };
-  actions.append(check,remove);item.append(title,detail,status,when,actions);el.append(item);
+  actions.append(check,remove);item.append(title,detail,status,when,actions);
+  if(h.notice){
+   const notice=document.createElement('div');notice.className='notice success';notice.setAttribute('role','status');
+   const message=document.createElement('strong');message.textContent='🎯 Hedef fiyat yakalandı: '+money(h.notice.price);
+   const date=document.createElement('small');date.textContent=' '+new Date(h.notice.at).toLocaleString('tr-TR');
+   notice.append(message,date);
+   if(safeOfferLink(h.notice.url)){
+    const link=document.createElement('a');link.href=h.notice.url;link.target='_blank';link.rel='noopener noreferrer';link.textContent=' Mağazayı aç';notice.append(link);
+   }
+   const seen=document.createElement('button');seen.textContent='Bildirimi okudum';seen.onclick=async()=>{
+    seen.disabled=true;try{await serverWatch('POST','/'+encodeURIComponent(h.serverId)+'/notice/read',{at:h.notice.at});await syncHunts();}catch(e){seen.disabled=false;alert('Bildirim kaydedilemedi.');}
+   };notice.append(seen);item.append(notice);
+  }
+  el.append(item);
  });
 }
 renderHuntList();
@@ -143,3 +157,7 @@ syncHunts();
 // Retry synchronization when connectivity returns; this never queries price providers.
 window.addEventListener('online',()=>syncHunts());
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncHunts();});
+
+function safeOfferLink(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password}catch{return false}}
+// Poll stored results only. This never calls the price API or consumes Reef credits.
+setInterval(()=>{if(document.visibilityState==='visible')syncHunts();},60000);

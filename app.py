@@ -548,7 +548,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.74')
+def health():return jsonify(ok=True,service='cebimde',version='3.75',watchMonitoring=1)
 
 @app.get('/api/debug/external')
 def debug_external():
@@ -783,7 +783,7 @@ def product():
         best=offers[0]['price'] if offers else None
         savings=round(input_price-best,2) if input_price and best and input_price>best else 0
         result={'title':title,'input_source':host,'input_url':target,'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None,'savings':savings}
-        result['watchReceipt']=sign_snapshot(target,best)
+        result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
         return jsonify(ok=True,product=result)
     except Exception as e:return jsonify(ok=False,error=str(e)),422
 
