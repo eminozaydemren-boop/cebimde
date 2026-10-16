@@ -38,7 +38,7 @@ async function serverWatch(method,path,body){
  const d=await res.json();if(!res.ok||!d.ok)throw Error(d.error||'Sunucu kaydı başarısız.');return d;
 }
 let syncPromise=null,syncRequested=false,monitorLastRun=null;
-const deletingHunts=new Set();
+const deletingHunts=new Set(),checkingHunts=new Set();
 function syncHunts(){
  syncRequested=true;
  if(syncPromise)return syncPromise;
@@ -115,13 +115,30 @@ function renderHuntList(){
  const a=readHunts();el.replaceChildren();
  if(!a.length){el.textContent='Henüz kayıtlı av yok.';return}
  a.forEach(h=>{
-  const item=document.createElement('article');item.className='huntitem';
+  const item=document.createElement('article');item.className='huntitem';if(h.serverId)item.id='watch-'+h.serverId;
   const title=document.createElement('strong');title.textContent=h.title;
   const detail=document.createElement('div');detail.textContent='Hedef: '+money(h.target)+' · Son görülen: '+(h.lastPrice==null?'Henüz kontrol edilmedi':money(h.lastPrice));
   const status=document.createElement('div');status.className='huntstate';status.textContent=h.lastPrice==null?'🎯 Güncel fiyat kontrolü bekleniyor':h.lastPrice<=h.target?'🎯 Son kontrolde hedef yakalandı!':'🎯 Avda · hedefe '+money(h.lastPrice-h.target)+' kaldı';
-  const when=document.createElement('small');when.textContent=(h.lastChecked?'Son kontrol: '+new Date(h.lastChecked).toLocaleString('tr-TR'):'Son kontrol: henüz yok')+' · '+(h.serverId&&!h.dirty?'Sunucuyla eşitlendi':'Cihazda kayıtlı; eşitleme bekleniyor')+' · '+(h.monitorState==='unavailable'?'Son otomatik denemede fiyat doğrulanamadı':monitorLastRun?'Otomatik tarama etkin':'İlk otomatik tarama bekleniyor');
+  const when=document.createElement('small');when.textContent=(h.lastChecked?'Son kontrol: '+new Date(h.lastChecked).toLocaleString('tr-TR'):'Son kontrol: henüz yok')+' · '+(h.serverId&&!h.dirty?'Sunucuyla eşitlendi':'Cihazda kayıtlı; eşitleme bekleniyor')+' · '+(h.monitorState==='unavailable'?'Son kontrolde fiyat doğrulanamadı':monitorLastRun?'Otomatik tarama etkin':'İlk otomatik tarama bekleniyor');
   const actions=document.createElement('div');actions.className='hunbuttons';
-  const check=document.createElement('button');check.textContent='Fiyatı yeniden kontrol et';check.onclick=()=>{q('#url').value=h.url;q('#analyze').click();};
+  const check=document.createElement('button');check.textContent='Fiyatı ücretsiz kontrol et';check.disabled=checkingHunts.has(h.id);
+  const feedback=document.createElement('small');feedback.className='huntfeedback';feedback.setAttribute('role','status');
+  const setFeedback=text=>{const current=readHunts().find(x=>x.id===h.id);const row=current?.serverId?document.getElementById('watch-'+current.serverId):null;(row?.querySelector('.huntfeedback')||feedback).textContent=text;};
+  const runCheck=async(sourceUrl)=>{
+   if(checkingHunts.has(h.id))return;checkingHunts.add(h.id);
+   check.disabled=true;setFeedback('Açık mağaza fiyatı kontrol ediliyor…');
+   try{
+    await syncHunts();
+    const current=readHunts().find(x=>x.id===h.id);
+    if(!current?.serverId)throw Error('Av henüz sunucuyla eşitlenmedi.');
+    const result=await serverWatch('POST','/'+encodeURIComponent(current.serverId)+'/check',sourceUrl?{sourceUrl}:{});
+    const synced=await syncHunts();
+    if(!synced)throw Error('Kontrol tamamlandı; sonuçların eşitlenmesi bekleniyor.');
+    setFeedback(result.verified?'✓ Güncel fiyat doğrulandı: '+money(result.price):'Güncel fiyat doğrulanamadı; son doğrulanan fiyat korundu.');
+   }catch(e){setFeedback(e.message);}
+   finally{checkingHunts.delete(h.id);check.disabled=false;const current=readHunts().find(x=>x.id===h.id);const row=current?.serverId?document.getElementById('watch-'+current.serverId):null;row?.querySelectorAll('button').forEach(b=>b.disabled=false);}
+  };
+  check.onclick=()=>runCheck();
   const remove=document.createElement('button');remove.textContent='Avı sil';remove.onclick=async()=>{
    if(deletingHunts.has(h.id))return;
    deletingHunts.add(h.id);remove.disabled=true;
@@ -133,7 +150,13 @@ function renderHuntList(){
    }catch(e){alert('Av silinemedi; kayıt korundu. '+e.message);}
    finally{deletingHunts.delete(h.id);remove.disabled=false;}
   };
-  actions.append(check,remove);item.append(title,detail,status,when,actions);
+  actions.append(check,remove);item.append(title,detail,status,when,actions,feedback);
+  const sources=document.createElement('details');
+  const summary=document.createElement('summary');summary.textContent='Başka mağaza kaynağı ekle';
+  const note=document.createElement('small');note.textContent='Robotistan, UNI-T, Bauhaus, Teknosa, MediaMarkt veya Vatan gibi desteklenen mağazalardan aynı ürünün linkini ekle.';
+  const input=document.createElement('input');input.type='url';input.placeholder='https://…';input.setAttribute('aria-label','Aynı ürünün mağaza linki');
+  const add=document.createElement('button');add.textContent='Kaynağı doğrula';add.disabled=checkingHunts.has(h.id);add.onclick=()=>{if(input.value.trim())runCheck(input.value.trim());};
+  sources.append(summary,note,input,add);item.append(sources);
   if(h.notice){
    const notice=document.createElement('div');notice.className='notice success';notice.setAttribute('role','status');
    const message=document.createElement('strong');message.textContent='🎯 Hedef fiyat yakalandı: '+money(h.notice.price);

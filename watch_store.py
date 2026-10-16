@@ -186,17 +186,57 @@ def monitor_run():
             if not row:return jsonify(ok=True,processed=0)
             ident,title,url,target,meta,hit_active,notice_price=row
             result=check_watch(title,url,meta)
-            if result:
-                notify=should_notify(result['price'],float(target),hit_active,notice_price)
-                conn.execute("""UPDATE watch_items SET last_attempt=NOW(),monitor_state='verified',
-                    last_price=%s,checked_at=NOW(),hit_active=%s,
-                    notice_at=CASE WHEN %s THEN NOW() ELSE notice_at END,
-                    notice_price=CASE WHEN %s THEN %s ELSE notice_price END,
-                    notice_url=CASE WHEN %s THEN %s ELSE notice_url END
-                    WHERE id=%s""",(result['price'],result['price']<=float(target),notify,
-                                     notify,result['price'],notify,result['url'],ident))
-                return jsonify(ok=True,processed=1,verified=1,notifications=int(notify))
-            conn.execute("UPDATE watch_items SET last_attempt=NOW(),monitor_state='unavailable' WHERE id=%s",(ident,))
-            return jsonify(ok=True,processed=1,verified=0,notifications=0)
+            return jsonify(ok=True,**persist_check(conn,row,result))
     except Exception:
         return jsonify(ok=False,error='Otomatik tarama tamamlanamadi.'),503
+
+
+def persist_check(conn,row,result):
+    from price_monitor import should_notify
+    ident,title,url,target,meta,hit_active,notice_price=row
+    if result:
+        notify=should_notify(result['price'],float(target),hit_active,notice_price)
+        conn.execute("""UPDATE watch_items SET last_attempt=NOW(),monitor_state='verified',
+            last_price=%s,checked_at=NOW(),hit_active=%s,
+            notice_at=CASE WHEN %s THEN NOW() ELSE notice_at END,
+            notice_price=CASE WHEN %s THEN %s ELSE notice_price END,
+            notice_url=CASE WHEN %s THEN %s ELSE notice_url END
+            WHERE id=%s""",(result['price'],result['price']<=float(target),notify,
+                             notify,result['price'],notify,result['url'],ident))
+        return dict(processed=1,verified=True,notifications=int(notify),price=result['price'])
+    conn.execute("UPDATE watch_items SET last_attempt=NOW(),monitor_state='unavailable' WHERE id=%s",(ident,))
+    return dict(processed=1,verified=False,notifications=0)
+
+
+@watch_api.post('/<watch_id>/check')
+def check_saved_watch(watch_id):
+    key=owner()
+    if not key:return jsonify(ok=False,error='Av anahtari gerekli.'),401
+    from price_monitor import check_watch,safe_source
+    data=request.get_json(silent=True) or {}
+    if not isinstance(data,dict):return jsonify(ok=False,error='Kayit gecersiz.'),400
+    source=data.get('sourceUrl')
+    if source is not None and (not isinstance(source,str) or len(source)>2000 or not safe_source(source)):
+        return jsonify(ok=False,error='Desteklenen bir magazanin HTTPS urun linkini gir.'),400
+    try:
+        initialize()
+        with db() as conn:
+            row=conn.execute("""SELECT id,title,product_url,target,monitor_meta,hit_active,notice_price,last_attempt
+                FROM watch_items WHERE id=%s AND owner=%s FOR UPDATE""",(watch_id,key)).fetchone()
+            if not row:return jsonify(ok=False,error='Av bulunamadi.'),404
+            if row[7] and (datetime.now(timezone.utc)-row[7]).total_seconds()<60:
+                return jsonify(ok=False,error='Yeni kontrol icin bir dakika bekle.'),429
+            record=list(row[:7]);meta=dict(record[4] or {})
+            if source:
+                meta['sources']=[source]+[u for u in (meta.get('sources') or [row[2]]) if u!=source][:2]
+            result=None if source else check_watch(row[1],row[2],meta)
+            # A new source is retained only when that exact source independently verifies.
+            if source:
+                identity=meta.get('identity') or {'title':row[1]}
+                result=check_watch(row[1],source,{'identity':identity,'sources':[source]})
+                if result:
+                    conn.execute('UPDATE watch_items SET monitor_meta=%s::jsonb WHERE id=%s',(json.dumps(meta),watch_id))
+            outcome=persist_check(conn,record,result)
+            return jsonify(ok=True,**outcome,message='Fiyat dogrulandi.' if result else 'Guncel fiyat dogrulanamadi; son dogrulanan fiyat korundu.')
+    except Exception:
+        return jsonify(ok=False,error='Kontrol tamamlanamadi; kaydin korundu.'),503
