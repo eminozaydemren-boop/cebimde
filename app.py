@@ -33,6 +33,7 @@ def searx_result_urls(body, endpoint):
 
 app=Flask(__name__, static_folder='web', static_url_path='')
 from watch_store import watch_api, sign_snapshot
+from product_links import product_link, ProductLinkError
 app.register_blueprint(watch_api)
 ALLOWED={'www.hepsiburada.com','hepsiburada.com','www.amazon.com.tr','amazon.com.tr','www.trendyol.com','trendyol.com','www.n11.com','n11.com'}
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36','Accept-Language':'tr-TR,tr;q=0.9,en;q=0.7'}
@@ -548,7 +549,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.76',watchMonitoring=1)
+def health():return jsonify(ok=True,service='cebimde',version='3.77',watchMonitoring=1)
 
 @app.get('/api/debug/external')
 def debug_external():
@@ -731,6 +732,7 @@ def debug_web():
 def product():
     target=request.args.get('url','').strip()
     try:
+        target=product_link(target)
         p=urlparse(target); host=(p.hostname or '').lower()
         if p.scheme not in ('http','https') or host not in ALLOWED: raise ValueError('Desteklenmeyen bağlantı.')
         title=None; input_product={}
@@ -785,6 +787,8 @@ def product():
         result={'title':title,'input_source':host,'input_url':target,'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None,'savings':savings}
         result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
         return jsonify(ok=True,product=result)
+    except ProductLinkError as e:
+        return jsonify(ok=False,error=str(e),errorCode='PRODUCT_LINK_REQUIRED',pageType=e.page_type),400
     except Exception as e:return jsonify(ok=False,error=str(e)),422
 
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.getenv('PORT','10000')))

@@ -1,4 +1,4 @@
-# CEBİMDE V3.76
+# CEBİMDE V3.77
 
 Price comparison and persistent target-price watches. Existing comparison providers and page styles are preserved.
 
@@ -28,3 +28,5 @@ Frontend synchronization: `node --test tests/watch_sync.test.cjs`.
 Live readiness: `/health` and `/api/watches/status`.
 
 Saved-watch rechecks use `/api/watches/<id>/check` and only the free monitor. Rechecks require the owner key and have a one-minute per-watch cooldown. Optional `sourceUrl` must be an allowed HTTPS shop URL; it is saved only after that exact source passes identity and price verification. Acknowledging a notice does not delete the watch.
+
+Product input validation rejects campaign/category/search pages before any price-provider request. Missing URL schemes are normalized to HTTPS. Hepsiburada `-p-` and `-pm-` product links are supported.
