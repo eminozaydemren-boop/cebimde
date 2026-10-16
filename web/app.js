@@ -5,21 +5,26 @@ function parseLink(raw){
   const u=new URL(/^https?:\/\//i.test(value)?value:'https://'+value);
   const host=u.hostname.toLowerCase(),domain=host.replace(/^www\./,''),path=u.pathname;
   if(!['http:','https:'].includes(u.protocol)||u.username||u.password||(u.port&&u.port!=='443'))return {error:'Geçerli bir HTTPS ürün bağlantısı gir.'};
-  u.protocol='https:';u.hash='';u.port='';
+  u.hash='';u.port='';
   const stores={
+   'pazarama.com':{source:'Pazarama',pattern:/-p-([A-Za-z0-9_-]+)(?:\/|$)/i,type:'Ürün kodu'},
    'hepsiburada.com':{source:'Hepsiburada',pattern:/-(?:p|pm)-([A-Za-z0-9_-]+)(?:\/|$)/i,type:'Ürün kodu'},
    'trendyol.com':{source:'Trendyol',pattern:/-p-(\d+)(?:\/|$)/i,type:'Ürün ID'},
    'amazon.com.tr':{source:'Amazon TR',pattern:/\/(?:dp|gp\/product)\/([A-Z0-9]{10})(?:\/|$)/i,type:'ASIN'},
    'n11.com':{source:'n11',pattern:/\/urun\/[^/]+-(?:P)?(\d+)(?:\/|$)/i,type:'Ürün ID'}
   };
-  const store=stores[domain];if(!store)return {error:'Bu mağaza henüz desteklenmiyor.'};
+  const store=stores[domain];
+  if(!store){
+   if(!host.includes('.')||/\.(local|localhost|internal|test|invalid|example)$/.test(host)||/^[\d.]+$/.test(host))return {error:'Herkese açık bir mağazanın ürün bağlantısını gir.'};
+   return {source:host,id:null,type:'Mağaza',url:u.href};
+  }
   if(domain==='hepsiburada.com'&&path.toLowerCase().startsWith('/dv/'))return {error:'Bu bir kampanya sayfası. Kampanyadaki bir ürünü açıp o ürünün bağlantısını yapıştır.',pageUrl:u.href,kind:'campaign'};
   const match=path.match(store.pattern);
   if(!match)return {error:'Bu bağlantı tek bir ürün sayfası değil. Listeden bir ürünü açıp ürünün bağlantısını yapıştır.',pageUrl:u.href,kind:'listing'};
   return {source:store.source,id:match[1],type:store.type,url:u.href};
  }catch{return {error:'Geçerli bir ürün linki gir.'}}
 }
-q('#analyze').onclick=async()=>{const r=parseLink(q('#url').value),raw=r.url||q('#url').value,box=q('#linkstatus'),a=q('#analysis');a.classList.add('hidden');if(r.error){box.className='linkstatus error';box.textContent=r.error;if(r.pageUrl){const link=document.createElement('a');link.href=r.pageUrl;link.target='_blank';link.rel='noopener noreferrer';link.textContent=r.kind==='campaign'?' Kampanyayı aç ve bir ürün seç':' Sayfayı aç ve bir ürün seç';box.appendChild(link);}box.classList.remove('hidden');return}box.className='linkstatus ok';box.innerHTML=`✓ ${r.source} bağlantısı tanındı${r.id?` · ${r.type}: <b>${r.id}</b>`:''}. Doğrulanabilir kaynak aranıyor…`;box.classList.remove('hidden');if(location.protocol==='file:'){box.className='linkstatus error';box.innerHTML='Canlı doğrulama için <b>start.bat</b> ile aç.';return}try{let res=await fetch('/api/product?url='+encodeURIComponent(raw)),d=await res.json();if(!d.ok)throw new Error(d.error||'Doğrulanabilir veri bulunamadı.');let p=d.product;q('#productTitle').textContent=p.title;q('#sourceName').textContent=p.input_source||r.source;q('#sourceId').textContent=r.id?`${r.type}: ${r.id}`:'Ürün kimliği';q('#confidence').innerHTML='✓<br><small>doğrulandı</small>';let body='';if(p.price){let offers=(p.offers||[]).map((o,i)=>`<article class="${i===0?'best':''}"><div><b>${o.source}</b><span>${i===0?'En düşük doğrulanan teklif':'Doğrulanan teklif'}</span></div><strong>${money(o.price)}</strong><small><a href="${o.url}" target="_blank" rel="noopener">Kaynağı aç</a></small></article>`).join('');body=`<div class="notice success">✓ Ürün kimliği doğrulandı. <b>${(p.offers||[]).length||1} doğrulanmış fiyat kaynağı</b> bulundu.</div>${p.input_price?`<div class="notice">Gönderdiğin mağazadaki doğrulanan fiyat: <b>${money(p.input_price)}</b></div>`:''}${p.savings>0?`<div class="notice success">🎯 <b>AVINI YAKALADIK!</b> <b>${money(p.savings)}</b> daha ucuz.</div>`:''}<div class="offers">${offers||`<article class="best"><div><b>${p.price_source}</b></div><strong>${money(p.price)}</strong></article>`}</div><div class="pricebox"><span>EN DÜŞÜK DOĞRULANAN MALİYET</span><b>${money(p.price)}</b><small>Kampanya/kupon henüz düşülmedi.</small></div>`;}else body=`<div class="notice">⚠️ Ürün tanındı ancak doğrulanabilir güncel fiyat bulunamadı. Fiyat uydurulmadı.</div>`;q('#resultBody').innerHTML=body;if(p.price){mountCostCalculator(p);mountHuntControls(p,raw);updateHuntSnapshot(p,raw)}renderHuntList();box.innerHTML=`✓ ${p.title} doğrulandı${p.price?` · ${money(p.price)}`:''}`;a.classList.remove('hidden');a.scrollIntoView({behavior:'smooth'});}catch(e){box.className='linkstatus error';box.innerHTML=`⚠️ ${e.message} <b>Fiyat uydurulmadı.</b>`;}};
+q('#analyze').onclick=async()=>{const r=parseLink(q('#url').value),raw=r.url||q('#url').value,box=q('#linkstatus'),a=q('#analysis');a.classList.add('hidden');if(r.error){box.className='linkstatus error';box.textContent=r.error;if(r.pageUrl){const link=document.createElement('a');link.href=r.pageUrl;link.target='_blank';link.rel='noopener noreferrer';link.textContent=r.kind==='campaign'?' Kampanyayı aç ve bir ürün seç':' Sayfayı aç ve bir ürün seç';box.appendChild(link);}box.classList.remove('hidden');return}box.className='linkstatus ok';box.innerHTML=`✓ ${r.source} bağlantısı tanındı${r.id?` · ${r.type}: <b>${r.id}</b>`:''}. Doğrulanabilir kaynak aranıyor…`;box.classList.remove('hidden');if(location.protocol==='file:'){box.className='linkstatus error';box.innerHTML='Canlı doğrulama için <b>start.bat</b> ile aç.';return}try{let res=await fetch('/api/product?url='+encodeURIComponent(raw)+'&name='+encodeURIComponent(q('#productHint')?.value||'')),d=await res.json();if(!d.ok)throw new Error(d.error||'Doğrulanabilir veri bulunamadı.');let p=d.product;q('#productTitle').textContent=p.title;q('#sourceName').textContent=p.input_source||r.source;q('#sourceId').textContent=r.id?`${r.type}: ${r.id}`:'Ürün kimliği';q('#confidence').innerHTML=p.identityVerified===false?'?<br><small>aranıyor</small>':'✓<br><small>doğrulandı</small>';q('#statusLabel').textContent=p.identityVerified===false?'ÜRÜN BİLGİSİ ARANIYOR':'ÜRÜN DOĞRULANDI';let body='';if(p.price){let offers=(p.offers||[]).map((o,i)=>`<article class="${i===0?'best':''}"><div><b>${o.source}</b><span>${i===0?'En düşük doğrulanan teklif':'Doğrulanan teklif'}</span></div><strong>${money(o.price)}</strong><small><a href="${o.url}" target="_blank" rel="noopener">Kaynağı aç</a></small></article>`).join('');body=`<div class="notice success">✓ Ürün kimliği doğrulandı. <b>${(p.offers||[]).length||1} doğrulanmış fiyat kaynağı</b> bulundu.</div>${p.input_price?`<div class="notice">Gönderdiğin mağazadaki doğrulanan fiyat: <b>${money(p.input_price)}</b></div>`:''}${p.savings>0?`<div class="notice success">🎯 <b>AVINI YAKALADIK!</b> <b>${money(p.savings)}</b> daha ucuz.</div>`:''}<div class="offers">${offers||`<article class="best"><div><b>${p.price_source}</b></div><strong>${money(p.price)}</strong></article>`}</div><div class="pricebox"><span>EN DÜŞÜK DOĞRULANAN MALİYET</span><b>${money(p.price)}</b><small>Kampanya/kupon henüz düşülmedi.</small></div>`;}else body=`<div class="notice">⚠️ Bu ürün için doğrulanabilir güncel fiyat bulunamadı. Ürün adı veya barkod alanını doldurup yeniden deneyebilirsin.</div>`;q('#resultBody').innerHTML=body;if(p.price){mountCostCalculator(p);mountHuntControls(p,raw);updateHuntSnapshot(p,raw)}renderHuntList();box.textContent=(p.identityVerified===false?'Arama tamamlandı: ':'✓ ')+p.title+(p.price?' · '+money(p.price):' · Doğrulanmış fiyat bulunamadı');a.classList.remove('hidden');a.scrollIntoView({behavior:'smooth'});}catch(e){box.className='linkstatus error';box.innerHTML=`⚠️ ${e.message} <b>Fiyat uydurulmadı.</b>`;}};
 
 
 // V3.69: Explicitly user-confirmed checkout adjustments. Never call them
@@ -172,7 +177,7 @@ function renderHuntList(){
   actions.append(check,remove);item.append(title,detail,status,when,actions,feedback);
   const sources=document.createElement('details');
   const summary=document.createElement('summary');summary.textContent='Başka mağaza kaynağı ekle';
-  const note=document.createElement('small');note.textContent='Robotistan, UNI-T, Bauhaus, Teknosa, MediaMarkt veya Vatan gibi desteklenen mağazalardan aynı ürünün linkini ekle.';
+  const note=document.createElement('small');note.textContent='Aynı ürünün başka bir satıcıdaki bağlantısını ekle. Ürün ve fiyat doğrulanırsa kaydedilir.';
   const input=document.createElement('input');input.type='url';input.placeholder='https://…';input.setAttribute('aria-label','Aynı ürünün mağaza linki');
   const add=document.createElement('button');add.textContent='Kaynağı doğrula';add.disabled=checkingHunts.has(h.id);add.onclick=()=>{if(input.value.trim())runCheck(input.value.trim());};
   sources.append(summary,note,input,add);item.append(sources);
@@ -200,6 +205,6 @@ syncHunts();
 window.addEventListener('online',()=>syncHunts());
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncHunts();});
 
-function safeOfferLink(value){try{const u=new URL(value);return u.protocol==='https:'&&!u.username&&!u.password}catch{return false}}
+function safeOfferLink(value){try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)&&!u.username&&!u.password}catch{return false}}
 // Poll stored results only. This never calls the price API or consumes Reef credits.
 setInterval(()=>{if(document.visibilityState==='visible')syncHunts();},60000);

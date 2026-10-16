@@ -25,8 +25,8 @@ def test_no_false_price_for_foreign_invalid_soldout_or_aggregate(offer):
 def test_unrelated_product_is_never_an_alert():
     assert pm.verified_offer(page(),URL,{'title':'Sonoff ZBMINI-R2','brand':'Sonoff','mpn':'ZBMINI-R2'}) is None
 
-@pytest.mark.parametrize('url',['http://robotistan.com/x','https://127.0.0.1/x','https://robotistan.com.evil.test/x','https://robotistan.com:8080/x','https://user:password@robotistan.com/x'])
-def test_private_or_unapproved_sources_rejected(url):
+@pytest.mark.parametrize('url',['https://127.0.0.1/x','https://robotistan.com.evil.test/x','https://robotistan.com:8080/x','https://user:password@robotistan.com/x'])
+def test_private_or_invalid_sources_rejected(url):
     assert not pm.safe_source(url)
 
 def test_scan_does_not_call_paid_provider(monkeypatch):

@@ -70,12 +70,9 @@ def owner():
     return key
 
 def valid_url(value):
-    try:
-        u=urlparse(value)
-        return u.scheme=="https" and u.hostname in {
-          "hepsiburada.com","www.hepsiburada.com","trendyol.com","www.trendyol.com",
-          "n11.com","www.n11.com","amazon.com.tr","www.amazon.com.tr"}
-    except Exception:return False
+    from public_web import normalize_url
+    try:normalize_url(value);return True
+    except (ValueError,TypeError):return False
 
 @watch_api.route("",methods=["GET","POST"])
 def collection():
@@ -217,7 +214,7 @@ def check_saved_watch(watch_id):
     if not isinstance(data,dict):return jsonify(ok=False,error='Kayit gecersiz.'),400
     source=data.get('sourceUrl')
     if source is not None and (not isinstance(source,str) or len(source)>2000 or not safe_source(source)):
-        return jsonify(ok=False,error='Desteklenen bir magazanin HTTPS urun linkini gir.'),400
+        return jsonify(ok=False,error='Herkese acik bir magazanin urun linkini gir.'),400
     try:
         initialize()
         with db() as conn:

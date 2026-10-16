@@ -7,21 +7,10 @@ import time
 from urllib.parse import urlparse,urljoin
 import requests
 
-PUBLIC_SHOPS={
- 'hepsiburada.com','www.hepsiburada.com','trendyol.com','www.trendyol.com',
- 'n11.com','www.n11.com','amazon.com.tr','www.amazon.com.tr',
- 'robotistan.com','www.robotistan.com','uni-t.com.tr','www.uni-t.com.tr',
- 'unitturkiye.com','www.unitturkiye.com','bauhaus.com.tr','www.bauhaus.com.tr',
- 'perpaotomasyon.com','www.perpaotomasyon.com','elektrikdukani.com','www.elektrikdukani.com',
- 'elcelektromarket.com','www.elcelektromarket.com','teknosa.com','www.teknosa.com',
- 'mediamarkt.com.tr','www.mediamarkt.com.tr','vatanbilgisayar.com','www.vatanbilgisayar.com'
-}
-
 def safe_source(url):
-    try:
-        p=urlparse(url)
-        return p.scheme=='https' and p.hostname in PUBLIC_SHOPS and not p.username and not p.password and p.port in (None,443)
-    except (TypeError,ValueError):return False
+    from public_web import normalize_url
+    try:normalize_url(url);return True
+    except (ValueError,TypeError):return False
 
 
 def metadata(base,offers,url):
@@ -37,28 +26,14 @@ def metadata(base,offers,url):
 
 
 def public_page(url):
-    if not safe_source(url):return None
-    # Redirects may only stay within the explicitly supported public retailer list.
-    deadline=time.monotonic()+6
-    for _ in range(2):
-        if time.monotonic()>=deadline:return None
-        with requests.get(url,timeout=(2,3),allow_redirects=False,stream=True,
-                          headers={'User-Agent':'CEBIMDE-PriceMonitor/3.75','Accept':'text/html','Accept-Language':'tr-TR'}) as r:
-            if r.status_code in (301,302,303,307,308):
-                url=urljoin(url,r.headers.get('Location',''))
-                if not safe_source(url):return None
-                continue
-            if r.status_code!=200 or 'html' not in r.headers.get('Content-Type','').lower():return None
-            data=bytearray()
-            for chunk in r.iter_content(65536):
-                data.extend(chunk)
-                if len(data)>1024*1024 or time.monotonic()>=deadline:return None
-            return data.decode(r.encoding or 'utf-8',errors='replace'),url
-    return None
+    from public_web import fetch_page
+    try:return fetch_page(url,budget=7)
+    except Exception:return None
 
 
 def verified_offer(page,url,identity):
-    from app import walk,identity_match,clean_price
+    from app import walk,clean_price
+    from product_data import same_product
     found=[]
     for raw in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',page,re.I|re.S):
         try:data=json.loads(html.unescape(raw).strip())
@@ -69,7 +44,7 @@ def verified_offer(page,url,identity):
             brand=p.get('brand');brand=brand.get('name') if isinstance(brand,dict) else brand
             candidate={'title':p.get('name'),'brand':brand,'mpn':p.get('mpn'),
                        'gtin':p.get('gtin13') or p.get('gtin14') or p.get('gtin12') or p.get('gtin8') or p.get('gtin')}
-            if not identity_match(identity,candidate):continue
+            if not same_product(identity,candidate):continue
             offers=p.get('offers') or [];offers=offers if isinstance(offers,list) else [offers]
             for o in offers:
                 if not isinstance(o,dict) or o.get('@type')=='AggregateOffer':continue

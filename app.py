@@ -549,7 +549,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.77',watchMonitoring=1)
+def health():return jsonify(ok=True,service='cebimde',version='3.78',watchMonitoring=1)
 
 @app.get('/api/debug/external')
 def debug_external():
@@ -734,7 +734,9 @@ def product():
     try:
         target=product_link(target)
         p=urlparse(target); host=(p.hostname or '').lower()
-        if p.scheme not in ('http','https') or host not in ALLOWED: raise ValueError('Desteklenmeyen bağlantı.')
+        if host not in {'hepsiburada.com','www.hepsiburada.com','trendyol.com','www.trendyol.com','n11.com','www.n11.com','amazon.com.tr','www.amazon.com.tr'}:
+            from generic_analysis import analyze_any_seller
+            return jsonify(ok=True,product=analyze_any_seller(target,request.args.get('name','')))
         title=None; input_product={}
         try:
             r=requests.get(target,headers=HEADERS,timeout=6); r.raise_for_status(); input_product=extract_product(r.text,target); title=input_product.get('title')

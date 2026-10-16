@@ -1,4 +1,4 @@
-# CEBİMDE V3.77
+# CEBİMDE V3.78
 
 Price comparison and persistent target-price watches. Existing comparison providers and page styles are preserved.
 
@@ -13,9 +13,9 @@ Set `DATABASE_URL` to the same-region internal PostgreSQL URL. Tables and additi
 
 GitHub OIDC authenticates each scan request. The backend checks the signature, issuer, audience, immutable repository and owner IDs, public visibility, main branch, workflow path, and trigger type. Forks and pull requests cannot trigger scans. Each run handles up to 30 due watches, one at a time. Each watch is eligible after six hours; queues above 30 may take longer. Failed source checks wait until the next scheduled pass.
 
-The monitor only reads structured Product/Offer data from an explicit list of public retailers. It never calls ReefAPI, Brave, or any paid fallback. Product identity, positive finite TRY price, and any explicit availability must pass validation. Blocked pages, missing structured data, unsupported shops, foreign currency, sold-out offers, and ambiguous aggregate prices do not become current prices. The last verified price is retained and the failed attempt is shown separately.
+The monitor only reads structured Product/Offer data from public retailers without a seller whitelist. It never calls ReefAPI, Brave, or any paid fallback. Product identity, positive finite TRY price, and any explicit availability must pass validation. Blocked pages, missing structured data, foreign currency, sold-out offers, and ambiguous aggregate prices do not become current prices. The last verified price is retained and the failed attempt is shown separately.
 
-Newly analyzed watches save signed product identity and up to three supported source URLs. Older watches fall back to their saved marketplace URL; reanalyzing and saving them once adds the independently verified source URLs.
+Newly analyzed watches save signed product identity and up to three verified source URLs. Older watches fall back to their saved marketplace URL; reanalyzing and saving them once adds the independently verified source URLs.
 
 ## Notifications
 
@@ -27,6 +27,15 @@ Python: `python -m pytest -q` (requires pytest).
 Frontend synchronization: `node --test tests/watch_sync.test.cjs`.
 Live readiness: `/health` and `/api/watches/status`.
 
-Saved-watch rechecks use `/api/watches/<id>/check` and only the free monitor. Rechecks require the owner key and have a one-minute per-watch cooldown. Optional `sourceUrl` must be an allowed HTTPS shop URL; it is saved only after that exact source passes identity and price verification. Acknowledging a notice does not delete the watch.
+Saved-watch rechecks use `/api/watches/<id>/check` and only the free monitor. Rechecks require the owner key and have a one-minute per-watch cooldown. Optional `sourceUrl` must be a public HTTP(S) shop URL; it is saved only after that exact source passes identity and price verification. Acknowledging a notice does not delete the watch.
 
 Product input validation rejects campaign/category/search pages before any price-provider request. Missing URL schemes are normalized to HTTPS. Hepsiburada `-p-` and `-pm-` product links are supported.
+
+
+## Seller-independent discovery
+
+Any public seller product URL can enter analysis, watch storage and free rechecks. Known marketplace campaign and listing URLs are rejected early. Other input pages are read for structured Product identity, GTIN, brand, model and title; missing identity falls back to page metadata, URL words or an optional user-provided name/barcode. An unverified title is not a verified price.
+
+The generic flow makes up to two free SearXNG queries, then checks up to four candidate pages concurrently. Only fresh structured TRY offers with matching identity and no conflicting pack, capacity or color are shown. Search snippets are never treated as prices. The existing four-marketplace comparison adapters remain in place; the generic flow and monitoring invoke no paid adapters. Styles are preserved.
+
+Public reads validate every redirect and DNS result, pin connections to a validated public IP, verify TLS against the original hostname, and bound response size and read time. Private networks and credentials in URLs are rejected. Blocked retailers, missing structured data and unindexed products can still yield no verified offers. Acceptance of a seller URL does not promise exhaustive coverage of all sellers.

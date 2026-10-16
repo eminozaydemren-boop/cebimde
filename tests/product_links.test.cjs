@@ -20,3 +20,9 @@ test('normalizes a pasted product hostname to HTTPS',()=>{
 test('rejects unsafe URLs without creating an open-page link',()=>{
  for(const url of ['https://user:pass@www.hepsiburada.com/urun-p-HBCV000TEST','https://www.hepsiburada.com:8080/urun-p-HBCV000TEST','https://hepsiburada.com.evil.test/urun-p-HBCV000TEST']){const result=parse(url);assert.ok(result.error);assert.equal(result.pageUrl,undefined);}
 });
+
+test('public sellers outside the original marketplace list are accepted',()=>{
+ for(const url of ['https://www.pazarama.com/widget-p-123','https://www.robotistan.com/unit-ut-12d-row-temassiz-ac-voltaj-test-cihazi','https://different-seller.com/my-product-100ml']){
+  const result=parse(url);assert.equal(result.error,undefined);assert.equal(result.url,url);
+ }
+});
