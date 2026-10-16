@@ -31,6 +31,26 @@ function mountCostCalculator(p){
 const HUNT_KEY='cebimde_hunts_v370';
 function readHunts(){try{let a=JSON.parse(localStorage.getItem(HUNT_KEY)||'[]');return Array.isArray(a)?a:[]}catch{return []}}
 function writeHunts(a){try{localStorage.setItem(HUNT_KEY,JSON.stringify(a.slice(0,30)));return true}catch{return false}}
+function watchKey(){try{let k=localStorage.getItem('cebimde_watch_key');if(!k){let b=new Uint8Array(32);crypto.getRandomValues(b);k=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');localStorage.setItem('cebimde_watch_key',k)}return k}catch{return null}}
+async function serverWatch(method,path,body){
+ const key=watchKey();if(!key)throw Error('Tarayıcı depolaması kapalı.');
+ const res=await fetch('/api/watches'+path,{method,headers:{'Content-Type':'application/json','X-Watch-Key':key},body:body?JSON.stringify(body):undefined});
+ const d=await res.json();if(!res.ok||!d.ok)throw Error(d.error||'Sunucu kaydı başarısız.');return d;
+}
+async function syncHunts(){
+ try{
+  const status=await fetch('/api/watches/status',{signal:AbortSignal.timeout(5000)});
+  if(!status.ok)return;
+  const remote=await serverWatch('GET','');
+  const local=readHunts();const remoteUrls=new Set(remote.watches.map(w=>huntId(w.url)));
+  for(const h of local.slice(0,30)){
+   if(!remoteUrls.has(huntId(h.url))){await serverWatch('POST','',{url:h.url,title:h.title,target:h.target});}
+  }
+  const latest=await serverWatch('GET','');
+  const merged=latest.watches.map(w=>{const old=local.find(h=>huntId(h.url)===huntId(w.url));return {...old,...w,id:huntId(w.url),serverId:w.id,lastPrice:w.lastPrice??old?.lastPrice??null,lastChecked:w.lastChecked??old?.lastChecked??null}});
+  writeHunts(merged);renderHuntList();
+ }catch(e){console.info('Avlar cihazda korunuyor:',e.message)}
+}
 function huntId(url){try{let u=new URL(url);return u.hostname+u.pathname}catch{return url}}
 function updateHuntSnapshot(p,url){
  const id=huntId(url),a=readHunts(),h=a.find(x=>x.id===id);if(!h)return;
@@ -55,6 +75,7 @@ function mountHuntControls(p,url){
   if(index>=0)a[index]=entry;else a.unshift(entry);
   feedback.textContent=writeHunts(a)?'✓ Av kaydedildi. Otomatik tarama ve bildirim henüz yok.':'Tarayıcı kaydı başarısız oldu.';
   renderHuntList();
+  serverWatch('POST','',{url,title:p.title,target}).then(()=>syncHunts()).catch(()=>{feedback.textContent+=' Sunucu bağlantısı bekleniyor; kayıt bu cihazda korundu.'});
  };
 }
 function renderHuntList(){
@@ -69,8 +90,11 @@ function renderHuntList(){
   const when=document.createElement('small');when.textContent='Son kontrol: '+new Date(h.lastChecked).toLocaleString('tr-TR')+' · Otomatik güncellenmez';
   const actions=document.createElement('div');actions.className='hunbuttons';
   const check=document.createElement('button');check.textContent='Fiyatı yeniden kontrol et';check.onclick=()=>{q('#url').value=h.url;q('#analyze').click();};
-  const remove=document.createElement('button');remove.textContent='Avı sil';remove.onclick=()=>{writeHunts(readHunts().filter(x=>x.id!==h.id));renderHuntList()};
+  const remove=document.createElement('button');remove.textContent='Avı sil';remove.onclick=async()=>{if(h.serverId){try{await serverWatch('DELETE','/'+encodeURIComponent(h.serverId))}catch(e){alert('Sunucudan silinemedi: '+e.message);return}}writeHunts(readHunts().filter(x=>x.id!==h.id));renderHuntList()};
   actions.append(check,remove);item.append(title,detail,status,when,actions);el.append(item);
  });
 }
 renderHuntList();
+
+// Synchronize when PostgreSQL is configured; keep existing local hunts until then.
+syncHunts();
