@@ -1,5 +1,6 @@
 """CEBIMDE watch storage. Requires DATABASE_URL (PostgreSQL)."""
-import os, json, secrets
+import os, json, secrets, math, hashlib
+from itsdangerous import URLSafeTimedSerializer, BadData
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from flask import Blueprint, request, jsonify
@@ -10,7 +11,32 @@ def db():
     import psycopg
     url=os.getenv("DATABASE_URL","")
     if not url: raise RuntimeError("Kalici veritabani baglanmadi (DATABASE_URL).")
-    return psycopg.connect(url)
+    return psycopg.connect(url, connect_timeout=5)
+
+def snapshot_signer():
+    secret=os.getenv('WATCH_SIGNING_SECRET') or os.getenv('DATABASE_URL')
+    if not secret:return None
+    return URLSafeTimedSerializer(hashlib.sha256(secret.encode()).hexdigest(),salt='cebimde-price-v1')
+
+def sign_snapshot(url, price):
+    signer=snapshot_signer()
+    if not signer or not isinstance(price,(int,float)) or not math.isfinite(price) or not 0<price<100000000:
+        return None
+    return signer.dumps(dict(url=url,price=price,at=datetime.now(timezone.utc).isoformat()))
+
+def read_snapshot(receipt,url):
+    if not receipt:return None,None
+    signer=snapshot_signer()
+    if not signer:raise ValueError('Fiyat kaydi dogrulanamadi.')
+    try:
+        data=signer.loads(receipt,max_age=86400)
+        price=float(data['price'])
+        at=datetime.fromisoformat(data['at'])
+        if data['url']!=url or not math.isfinite(price) or not 0<price<100000000 or at.tzinfo is None:
+            raise ValueError()
+        return price,at
+    except (BadData,ValueError,TypeError,KeyError):
+        raise ValueError('Fiyat kaydi gecersiz veya suresi dolmus.')
 
 def initialize():
     with db() as conn:
@@ -51,18 +77,28 @@ def collection():
                   target=float(r[3]),lastPrice=float(r[4]) if r[4] is not None else None,
                   lastChecked=r[5].isoformat() if r[5] else None) for r in rows])
             data=request.get_json(silent=True) or {}
+            if not isinstance(data,dict):
+                return jsonify(ok=False,error="Kayit bir nesne olmali."),400
             title=str(data.get("title","")).strip()[:250]
             url=str(data.get("url","")).strip()
             try:target=float(data.get("target",0))
             except (ValueError,TypeError):target=0
             if not title or not valid_url(url) or not 0<target<100000000:
                 return jsonify(ok=False,error="Urun veya hedef gecersiz."),400
+            try:price,checked=read_snapshot(data.get('snapshotReceipt'),url)
+            except ValueError as e:return jsonify(ok=False,error=str(e)),400
             ident=secrets.token_hex(16)
-            row=conn.execute("""INSERT INTO watch_items(id,owner,title,product_url,target)
-                VALUES(%s,%s,%s,%s,%s)
+            row=conn.execute("""INSERT INTO watch_items(id,owner,title,product_url,target,last_price,checked_at)
+                VALUES(%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (owner,product_url) DO UPDATE
-                SET title=EXCLUDED.title,target=EXCLUDED.target
-                RETURNING id""",(ident,key,title,url,target)).fetchone()
+                SET title=EXCLUDED.title,target=EXCLUDED.target,
+                last_price=CASE WHEN EXCLUDED.checked_at IS NOT NULL AND
+                  (watch_items.checked_at IS NULL OR EXCLUDED.checked_at>watch_items.checked_at)
+                  THEN EXCLUDED.last_price ELSE watch_items.last_price END,
+                checked_at=CASE WHEN EXCLUDED.checked_at IS NOT NULL AND
+                  (watch_items.checked_at IS NULL OR EXCLUDED.checked_at>watch_items.checked_at)
+                  THEN EXCLUDED.checked_at ELSE watch_items.checked_at END
+                RETURNING id""",(ident,key,title,url,target,price,checked)).fetchone()
             return jsonify(ok=True,id=row[0]),200
     except Exception as e:
         if isinstance(e,RuntimeError):return jsonify(ok=False,error=str(e)),503
@@ -88,3 +124,4 @@ def status():
         return jsonify(ok=True,configured=True,message="Kalici veritabani hazir.")
     except Exception:
         return jsonify(ok=False,configured=True,message="Veritabani baglantisi dogrulanamadi."),503
+

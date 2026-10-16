@@ -32,7 +32,7 @@ def searx_result_urls(body, endpoint):
     return out
 
 app=Flask(__name__, static_folder='web', static_url_path='')
-from watch_store import watch_api
+from watch_store import watch_api, sign_snapshot
 app.register_blueprint(watch_api)
 ALLOWED={'www.hepsiburada.com','hepsiburada.com','www.amazon.com.tr','amazon.com.tr','www.trendyol.com','trendyol.com','www.n11.com','n11.com'}
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36','Accept-Language':'tr-TR,tr;q=0.9,en;q=0.7'}
@@ -548,7 +548,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.68')
+def health():return jsonify(ok=True,service='cebimde',version='3.74')
 
 @app.get('/api/debug/external')
 def debug_external():
@@ -783,7 +783,9 @@ def product():
         best=offers[0]['price'] if offers else None
         savings=round(input_price-best,2) if input_price and best and input_price>best else 0
         result={'title':title,'input_source':host,'input_url':target,'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None,'savings':savings}
+        result['watchReceipt']=sign_snapshot(target,best)
         return jsonify(ok=True,product=result)
     except Exception as e:return jsonify(ok=False,error=str(e)),422
 
 if __name__=='__main__':app.run(host='0.0.0.0',port=int(os.getenv('PORT','10000')))
+
