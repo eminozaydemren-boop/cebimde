@@ -60,3 +60,15 @@ def test_model_tokens_survive_seller_url_word_separators():
     assert model_token('ut 12d row unit temassiz voltaj 1000v')=='UT12D'
     assert model_token('UNI-T UT-12D Row')=='UT12D'
     assert model_token('Sonoff ZBMINI L2')=='ZBMINI-L2'
+
+
+def test_discovery_searches_model_and_ranks_any_seller_without_whitelist(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    body='''<a href="https://unlisted-retailer.com/category">Category</a>
+    <a href="https://another-unlisted-seller.com/uni-t-ut12d">Product</a>
+    <a href="https://youtube.com/watch?id=UT12D">Video</a>'''
+    get=Mock(return_value=Mock(ok=True,text=body));monkeypatch.setattr(generic.requests,'get',get)
+    urls=generic.discover({'title':'ut 12d row unit voltaj dedektoru','url':URL})
+    assert urls[0]=='https://another-unlisted-seller.com/uni-t-ut12d'
+    assert all('youtube.com' not in u for u in urls)
+    assert any('UT12D' in call.kwargs['params']['q'] for call in get.call_args_list)

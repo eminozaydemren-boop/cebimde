@@ -44,7 +44,8 @@ def url_title(url):
 def discover(base):
     from app import model_token,searx_result_urls
     endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
-    if not endpoint:return []
+    if not endpoint:
+        base['_search']={'status':'not_configured','candidates':0};return []
     title=base.get('title') or ''
     barcode=base.get('gtin');model=base.get('mpn') or model_token(title)
     queries=[]
@@ -55,12 +56,13 @@ def discover(base):
     def search(query):
         try:
             r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.78','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=7)
-            return searx_result_urls(r.text,endpoint) if r.ok else []
-        except requests.RequestException:return []
-    urls=[]
+            return (r.ok,searx_result_urls(r.text,endpoint) if r.ok else [])
+        except requests.RequestException:return (False,[])
+    urls=[];success=False
     blocked=('google.com','bing.com','duckduckgo.com','youtube.com','facebook.com','instagram.com','pinterest.com','tiktok.com','akakce.com','cimri.com','epey.com','x.com','twitter.com','web.archive.org')
     with ThreadPoolExecutor(max_workers=2) as pool:
-        for found in pool.map(search,queries):
+        for ok,found in pool.map(search,queries):
+            success=success or ok
             for url in found:
                 try:
                     url=normalize_url(url);host=urlparse(url).hostname
@@ -72,6 +74,7 @@ def discover(base):
     def rank(url):
         path=re.sub(r'[^a-z0-9]','',unquote(urlparse(url).path).casefold())
         return 0 if needle and needle in path else 1
+    base['_search']={'status':'completed' if success else 'unavailable','candidates':min(len(urls),4)}
     return sorted(urls,key=rank)[:6]
 
 
@@ -120,7 +123,7 @@ def analyze_any_seller(target,hint=''):
     result={'title':base['title'],'input_source':urlparse(source).hostname.removeprefix('www.'),'input_url':target,
             'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,
             'currency':'TRY' if offers else None,'savings':round(input_price-best,2) if input_price and best and input_price>best else 0,
-            'identityVerified':bool(structured or offers),'searchMode':'open_web'}
+            'identityVerified':bool(structured or offers),'searchMode':'open_web','search':base.get('_search',{})}
     from watch_store import sign_snapshot
     result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
     return result
