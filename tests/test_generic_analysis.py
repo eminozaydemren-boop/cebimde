@@ -53,3 +53,10 @@ def test_exact_full_consumer_product_title_can_match_without_model():
 def test_gtin_conflict_overrides_same_title():
     a={'title':'Papilion Islak Mendil Lavanta 100 Yaprak','gtin':'123'}
     assert not same_product(a,dict(a,gtin='456'))
+
+
+def test_model_tokens_survive_seller_url_word_separators():
+    from app import model_token
+    assert model_token('ut 12d row unit temassiz voltaj 1000v')=='UT12D'
+    assert model_token('UNI-T UT-12D Row')=='UT12D'
+    assert model_token('Sonoff ZBMINI L2')=='ZBMINI-L2'

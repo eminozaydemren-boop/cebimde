@@ -79,16 +79,16 @@ def model_token(title):
     s=(title or '').upper()
     # Prefer actual manufacturer model codes, not electrical specifications
     # such as 90V-1000V or marketplace SKUs.
-    if re.search(r'\\bUT[\\s-]*12D\\b',s):
+    if re.search(r'\bUT[\s-]*12D\b',s):
         return 'UT12D'
-    if re.search(r'\\bZBMINI[\\s-]*L2\\b',s):
+    if re.search(r'\bZBMINI[\s-]*L2\b',s):
         return 'ZBMINI-L2'
     toks=re.findall(r'(?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*[0-9])[A-Z0-9-]{4,}',s)
-    for m in re.finditer(r'\\b([A-Z]{1,5})[ -]+([0-9]{1,4}[A-Z]{1,4})\\b',s):
+    for m in re.finditer(r'\b([A-Z]{1,5})[ -]+([0-9]{1,4}[A-Z]{1,4})\b',s):
         toks.append(m.group(1)+m.group(2))
     bad={'1000V','600V','220V','90V'}
     toks=[x for x in toks if x.replace('-','') not in bad
-          and not re.fullmatch(r'\\d+[A-Z]-\\d+[A-Z]',x)
+          and not re.fullmatch(r'\d+[A-Z]-\d+[A-Z]',x)
           and not x.startswith('HBCV')]
     return max(toks,key=len) if toks else None
 

@@ -49,16 +49,16 @@ def discover(base):
     barcode=base.get('gtin');model=base.get('mpn') or model_token(title)
     queries=[]
     if barcode:queries.append(str(barcode)+' fiyat')
-    if model:queries.append(' '.join(x for x in (base.get('brand'),str(model),'satın al fiyat') if x))
+    if model:queries.append(' '.join(x for x in (base.get('brand'),str(model),'satin al fiyat Turkiye') if x))
     queries.append('"'+title[:180]+'" fiyat')
     queries=list(dict.fromkeys(queries))[:2]
     def search(query):
         try:
-            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},timeout=4)
+            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.78','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=7)
             return searx_result_urls(r.text,endpoint) if r.ok else []
         except requests.RequestException:return []
     urls=[]
-    blocked=('google.com','bing.com','duckduckgo.com','youtube.com','facebook.com','instagram.com','pinterest.com','tiktok.com')
+    blocked=('google.com','bing.com','duckduckgo.com','youtube.com','facebook.com','instagram.com','pinterest.com','tiktok.com','akakce.com','cimri.com','epey.com','x.com','twitter.com','web.archive.org')
     with ThreadPoolExecutor(max_workers=2) as pool:
         for found in pool.map(search,queries):
             for url in found:
@@ -67,7 +67,12 @@ def discover(base):
                     if host==urlparse(endpoint).hostname or any(host==h or host.endswith('.'+h) for h in blocked):continue
                     if url!=base['url'] and url not in urls:urls.append(url)
                 except ValueError:continue
-    return urls[:6]
+    # Rank by product identifiers in the URL, never by a fixed retailer list.
+    needle=re.sub(r'[^a-z0-9]','',str(barcode or model or '').casefold())
+    def rank(url):
+        path=re.sub(r'[^a-z0-9]','',unquote(urlparse(url).path).casefold())
+        return 0 if needle and needle in path else 1
+    return sorted(urls,key=rank)[:6]
 
 
 def compare(base):
