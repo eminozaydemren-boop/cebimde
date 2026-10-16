@@ -21,6 +21,7 @@ def initialize():
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )""")
         conn.execute("CREATE INDEX IF NOT EXISTS watch_owner_idx ON watch_items(owner)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS watch_owner_url_idx ON watch_items(owner,product_url)")
 
 def owner():
     key=request.headers.get("X-Watch-Key","")
@@ -57,9 +58,12 @@ def collection():
             if not title or not valid_url(url) or not 0<target<100000000:
                 return jsonify(ok=False,error="Urun veya hedef gecersiz."),400
             ident=secrets.token_hex(16)
-            conn.execute("""INSERT INTO watch_items(id,owner,title,product_url,target)
-                         VALUES(%s,%s,%s,%s,%s)""",(ident,key,title,url,target))
-            return jsonify(ok=True,id=ident),201
+            row=conn.execute("""INSERT INTO watch_items(id,owner,title,product_url,target)
+                VALUES(%s,%s,%s,%s,%s)
+                ON CONFLICT (owner,product_url) DO UPDATE
+                SET title=EXCLUDED.title,target=EXCLUDED.target
+                RETURNING id""",(ident,key,title,url,target)).fetchone()
+            return jsonify(ok=True,id=row[0]),200
     except Exception as e:
         if isinstance(e,RuntimeError):return jsonify(ok=False,error=str(e)),503
         return jsonify(ok=False,error="Veritabani islemi basarisiz."),503
@@ -74,3 +78,13 @@ def delete(watch_id):
             conn.execute("DELETE FROM watch_items WHERE id=%s AND owner=%s",(watch_id,key))
         return jsonify(ok=True)
     except Exception:return jsonify(ok=False,error="Veritabani erisilemiyor."),503
+
+@watch_api.route("/status",methods=["GET"])
+def status():
+    if not os.getenv("DATABASE_URL"):
+        return jsonify(ok=False,configured=False,message="PostgreSQL baglantisi bekleniyor."),503
+    try:
+        initialize()
+        return jsonify(ok=True,configured=True,message="Kalici veritabani hazir.")
+    except Exception:
+        return jsonify(ok=False,configured=True,message="Veritabani baglantisi dogrulanamadi."),503
