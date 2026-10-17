@@ -133,3 +133,39 @@ def test_seller_pack_punctuation_does_not_prevent_same_product():
 def test_structured_offer_for_a_different_explicit_product_url_is_rejected():
     from product_data import structured_product
     assert structured_product(page(),'https://www.different-seller.com/different-product') is None
+
+
+def test_consumer_pack_units_match_but_multipacks_stay_distinct():
+    a={'title':"Familia Natural Tuvalet Kağıdı 40'lı"}
+    assert same_product(a,{'title':'Familia Natural Tuvalet Kağıdı 40 Rulo'})
+    assert not same_product(a,{'title':'Familia Natural Tuvalet Kağıdı 32 Rulo'})
+    assert not same_product(a,{'title':'Familia Natural Tuvalet Kağıdı 40 Rulo 3 Paket'})
+
+
+def test_encoded_titles_and_single_brand_arrays_are_read():
+    from product_data import structured_product
+    data={'@type':'Product','name':'Familia Natural Tuvalet Kağıdı 40&#039;lı','brand':[{'name':'Familia'}],
+          'description':'Includes "quoted" text','offers':{'@type':'Offer','price':439.9,'priceCurrency':'TRY'}}
+    parsed=structured_product('<script type="application/ld+json">'+json.dumps(data)+'</script>',URL)
+    assert parsed['title']=="Familia Natural Tuvalet Kağıdı 40'lı" and parsed['brand']=='Familia'
+
+
+def test_similar_consumer_names_never_become_verified_comparisons(monkeypatch):
+    candidate_url='https://another-shop.com/familia-plus-natural-40li'
+    data={'@type':'Product','name':"Familia Plus Natural 40'lı Tuvalet Kağıdı",'brand':[{'name':'Familia'}],
+          'offers':{'@type':'Offer','price':439.9,'priceCurrency':'TRY'}}
+    body='<script type="application/ld+json">'+json.dumps(data)+'</script>'
+    input_url='https://retailer.com/familia-natural-tuvalet-kagidi-40-li'
+    monkeypatch.setattr(generic,'fetch_page',lambda url,**kw:(body,candidate_url) if url==candidate_url else None)
+    monkeypatch.setattr(generic,'discover',lambda base:[candidate_url])
+    result=generic.analyze_any_seller(input_url)
+    assert result['similarOffers'][0]['price']==439.9
+    assert result['offers']==[] and result['price'] is None and result['input_price'] is None
+    assert not result['identityVerified'] and result['savings']==0 and result['watchReceipt'] is None
+
+
+def test_similar_consumer_names_do_not_override_gtin_or_pack_conflicts():
+    from product_data import plausible_product
+    a={'title':'Familia Natural Tuvalet Kagidi 40 li','gtin':'123'}
+    assert not plausible_product(a,{'title':'Familia Plus Natural Tuvalet Kagidi 40 li','brand':'Familia','gtin':'456'})
+    assert not plausible_product(a,{'title':'Familia Plus Natural Tuvalet Kagidi 32 li','brand':'Familia'})

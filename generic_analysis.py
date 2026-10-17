@@ -5,7 +5,7 @@ from urllib.parse import urlparse,urljoin,unquote
 from concurrent.futures import ThreadPoolExecutor,as_completed
 import requests
 from public_web import normalize_url,fetch_page
-from product_data import structured_product,same_product
+from product_data import structured_product,same_product,plausible_product
 from price_monitor import verified_offer
 
 class ProductInfoRequired(ValueError):pass
@@ -97,11 +97,15 @@ def compare(base):
                 if result:
                     candidate=structured_product(page[0],page[1])
                     return dict(result,source=urlparse(result['url']).hostname.removeprefix('www.'),title=candidate['title'])
+                candidate=structured_product(page[0],page[1])
+                if candidate and candidate.get('price') is not None and plausible_product(base,candidate):
+                    return {'source':urlparse(page[1]).hostname.removeprefix('www.'),'url':page[1],'title':candidate['title'],'price':candidate['price'],'identityConfirmed':False}
         except Exception:pass
         return None
     # Six pages in parallel; discovery results alone never become prices.
     with ThreadPoolExecutor(max_workers=6) as pool:out=list(pool.map(verify,urls[:6]))
-    return [x for x in out if x]
+    base['_similar']=[x for x in out if x and x.get('identityConfirmed') is False]
+    return [x for x in out if x and x.get('identityConfirmed') is not False]
 
 
 def analyze_any_seller(target,hint=''):
@@ -142,7 +146,7 @@ def analyze_any_seller(target,hint=''):
     result={'title':base['title'],'input_source':urlparse(source).hostname.removeprefix('www.'),'input_url':target,
             'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,
             'currency':'TRY' if offers else None,'savings':round(input_price-best,2) if input_price and best and input_price>best else 0,
-            'identityVerified':bool(structured or offers),'searchMode':'open_web','search':base.get('_search',{}),'inputRead':input_read}
+            'identityVerified':bool(structured or offers),'searchMode':'open_web','similarOffers':base.get('_similar',[]),'search':base.get('_search',{}),'inputRead':input_read}
     from watch_store import sign_snapshot
     result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
     return result
