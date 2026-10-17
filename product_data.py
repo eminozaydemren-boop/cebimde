@@ -13,7 +13,7 @@ def structured_product(page,url):
     unique={json.dumps(p,sort_keys=True):p for p in products};products=list(unique.values())
     path=urlparse(url).path.rstrip('/').casefold()
     exact=[p for p in products if urlparse(urljoin(url,str(p.get('url') or ''))).path.rstrip('/').casefold()==path and p.get('url')]
-    candidates=exact or (products if len(products)==1 else [])
+    candidates=exact or ([products[0]] if len(products)==1 and not products[0].get('url') else [])
     if not candidates:return None
     p=candidates[0];brand=p.get('brand');brand=brand.get('name') if isinstance(brand,dict) else brand
     base={'title':p.get('name'),'brand':brand,'sku':p.get('sku'),'mpn':p.get('mpn'),

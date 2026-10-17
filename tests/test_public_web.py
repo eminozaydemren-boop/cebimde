@@ -36,3 +36,17 @@ def test_redirect_into_private_network_is_blocked(monkeypatch):
     response=Mock(status=302,headers={'Location':'http://127.0.0.1/internal'})
     monkeypatch.setattr(web.urllib3,'HTTPSConnectionPool',lambda *a,**kw:Mock(urlopen=lambda *a,**kw:response))
     with pytest.raises(ValueError):web.fetch_page('https://retailer.com/product')
+
+
+def test_large_storefront_stops_after_complete_main_product_head(monkeypatch):
+    import json
+    monkeypatch.setattr(web,'public_addresses',lambda *a:['93.184.216.34'])
+    product={'@type':'Product','name':'Familia Natural Tuvalet Kağıdı 40\'lı','offers':{'@type':'Offer','price':599.95,'priceCurrency':'TRY','availability':'https://schema.org/InStock'}}
+    head=('<head><script type="application/ld+json">'+json.dumps(product)+'</script></head>').encode()
+    def chunks(*a,**kw):
+        yield head
+        raise AssertionError('Navigation menus must not be downloaded after the complete main offer')
+    response=Mock(status=200,headers={'Content-Type':'text/html; charset=utf-8'},stream=chunks)
+    monkeypatch.setattr(web.urllib3,'HTTPSConnectionPool',lambda *a,**kw:Mock(urlopen=lambda *a,**kw:response))
+    result=web.fetch_page('https://retailer.com/familia-natural-40-li')
+    assert '599.95' in result[0];response.close.assert_called_once()

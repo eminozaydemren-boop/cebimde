@@ -1,4 +1,4 @@
-# CEBİMDE V3.79
+# CEBİMDE V3.80
 
 Price comparison and persistent target-price watches. Existing comparison providers and page styles are preserved.
 
@@ -39,3 +39,5 @@ Any public seller product URL can enter analysis, watch storage and free recheck
 Each generic analysis makes up to two free SearXNG queries, then checks up to six candidate pages concurrently, giving distinct merchants priority before repeated pages from the same merchant. Only fresh structured TRY offers with matching identity and no conflicting pack, capacity or color are shown. Search snippets are never treated as prices. The existing four-marketplace comparison adapters remain in place; the generic flow and monitoring invoke no paid adapters. Styles are preserved. When the free search service is unavailable, the client retries generic analysis up to three times, 12 seconds apart; existing marketplace adapters are never retried by this path.
 
 Public reads validate every redirect and DNS result, pin connections to a validated public IP, verify TLS against the original hostname, and bound response size and read time. Private networks and credentials in URLs are rejected. Blocked retailers, missing structured data and unindexed products can still yield no verified offers. Acceptance of a seller URL does not promise exhaustive coverage of all sellers.
+
+V3.80 reads a complete priced Product schema in the HTML head without waiting for large menus below it. Pack suffixes such as 40li and 100lu are excluded from model codes; consumer products get an unquoted name query. The optional product input has responsive form styling, and release URLs invalidate cached frontend assets.

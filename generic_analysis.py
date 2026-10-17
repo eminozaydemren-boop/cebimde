@@ -51,6 +51,7 @@ def discover(base):
     queries=[]
     if barcode:queries.append(str(barcode)+' fiyat')
     if model:queries.append(' '.join(x for x in (base.get('brand'),str(model),'satin al fiyat Turkiye') if x))
+    if not barcode and not model:queries.append(title[:180]+' fiyat satın al')
     queries.append('"'+title[:180]+'" fiyat')
     queries=list(dict.fromkeys(queries))[:2]
     def search(query):

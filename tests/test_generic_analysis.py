@@ -108,3 +108,28 @@ def test_hint_cannot_overwrite_verified_input_product_identity(monkeypatch):
     result=generic.analyze_any_seller(URL,'Different Product 4006381333931')
     assert result['title']=='Example Brand Widget 100 ml' and result['input_price']==199.9
     assert compare.call_args.args[0]['gtin']=='8692857016208'
+
+
+def test_pack_suffix_is_not_a_model_number():
+    from app import model_token
+    assert model_token('Familia Natural Tuvalet Kağıdı 40li') is None
+    assert model_token('Papilion 100LU') is None
+
+
+def test_consumer_product_gets_unquoted_name_search(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    get=Mock(return_value=Mock(ok=True,text=''));monkeypatch.setattr(generic.requests,'get',get)
+    generic.discover({'title':'familia natural tuvalet kagidi 40 li','url':URL})
+    queries=[c.kwargs['params']['q'] for c in get.call_args_list]
+    assert any(q.startswith('familia natural') for q in queries)
+    assert all(not q.startswith('40LI') for q in queries)
+
+
+def test_seller_pack_punctuation_does_not_prevent_same_product():
+    assert same_product({'title':'familia natural tuvalet kagidi 40 li'}, {'title':"Familia Natural Tuvalet Kağıdı 40'lı",'brand':'Familia'})
+    assert not same_product({'title':'familia natural tuvalet kagidi 40 li'}, {'title':"Familia Natural Tuvalet Kağıdı 32'li",'brand':'Familia'})
+
+
+def test_structured_offer_for_a_different_explicit_product_url_is_rejected():
+    from product_data import structured_product
+    assert structured_product(page(),'https://www.different-seller.com/different-product') is None

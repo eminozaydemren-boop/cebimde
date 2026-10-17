@@ -89,7 +89,8 @@ def model_token(title):
     bad={'1000V','600V','220V','90V'}
     toks=[x for x in toks if x.replace('-','') not in bad
           and not re.fullmatch(r'\d+[A-Z]-\d+[A-Z]',x)
-          and not x.startswith('HBCV')]
+          and not x.startswith('HBCV')
+          and not re.fullmatch(r'\d+-?(?:LI|LU|ML|LT|KG|GR|GB|TB|ADET|RULO)',x)]
     return max(toks,key=len) if toks else None
 
 def same_model(a,b):
@@ -549,7 +550,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.79',watchMonitoring=1)
+def health():return jsonify(ok=True,service='cebimde',version='3.80',watchMonitoring=1)
 
 @app.get('/api/debug/external')
 def debug_external():
