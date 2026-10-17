@@ -74,8 +74,16 @@ def discover(base):
     def rank(url):
         path=re.sub(r'[^a-z0-9]','',unquote(urlparse(url).path).casefold())
         return 0 if needle and needle in path else 1
-    base['_search']={'status':'completed' if success else 'unavailable','candidates':min(len(urls),4)}
-    return sorted(urls,key=rank)[:6]
+    ranked=sorted(urls,key=rank)
+    # Give each merchant one slot before checking further pages from the same shop.
+    distinct=[];duplicates=[];hosts=set()
+    for url in ranked:
+        host=urlparse(url).hostname.removeprefix('www.')
+        if host in hosts:duplicates.append(url)
+        else:hosts.add(host);distinct.append(url)
+    selected=(distinct+duplicates)[:6]
+    base['_search']={'status':'completed' if success else 'unavailable','candidates':len(selected)}
+    return selected
 
 
 def compare(base):
@@ -90,8 +98,8 @@ def compare(base):
                     return dict(result,source=urlparse(result['url']).hostname.removeprefix('www.'),title=candidate['title'])
         except Exception:pass
         return None
-    # Four pages in parallel; discovery results alone never become prices.
-    with ThreadPoolExecutor(max_workers=4) as pool:out=list(pool.map(verify,urls[:4]))
+    # Six pages in parallel; discovery results alone never become prices.
+    with ThreadPoolExecutor(max_workers=6) as pool:out=list(pool.map(verify,urls[:6]))
     return [x for x in out if x]
 
 
@@ -114,6 +122,11 @@ def analyze_any_seller(target,hint=''):
         title=str(hint or '').strip()[:250] or url_title(source)
         if not title:raise ProductInfoRequired('Bu linkten ürün adı okunamadı. Ürün adı veya barkod alanını doldurarak yeniden dene.')
         base={'title':title,'url':source,'price':None,'currency':None,'gtin':gtin_in_url(source) or gtin_in_url(hint)}
+    if not structured:
+        hint=str(hint or '').strip()[:250]
+        barcode=gtin_in_url(hint) or gtin_in_url(source)
+        if hint:base['title']=hint
+        if barcode:base['gtin']=barcode
     base.setdefault('url',source)
     offers=[]
     if base.get('price') is not None:

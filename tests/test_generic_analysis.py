@@ -72,3 +72,39 @@ def test_discovery_searches_model_and_ranks_any_seller_without_whitelist(monkeyp
     assert urls[0]=='https://another-unlisted-seller.com/uni-t-ut12d'
     assert all('youtube.com' not in u for u in urls)
     assert any('UT12D' in call.kwargs['params']['q'] for call in get.call_args_list)
+
+
+def test_distinct_merchants_get_slots_before_repeated_same_shop_pages(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    links=['https://one-shop.com/widget-ABC123-'+str(i) for i in range(8)]
+    links+=['https://shop-'+str(i)+'.com/widget-ABC123' for i in range(5)]
+    get=Mock(return_value=Mock(ok=True,text=''.join('<a href="'+u+'">Product</a>' for u in links)))
+    monkeypatch.setattr(generic.requests,'get',get)
+    base={'title':'Brand ABC123','url':URL,'brand':'Brand','mpn':'ABC123'}
+    result=generic.discover(base)
+    from urllib.parse import urlparse
+    assert len(result)==6 and len({urlparse(u).hostname for u in result})==6
+    assert base['_search']['candidates']==6
+
+
+def test_user_name_overrides_unstructured_error_page_title(monkeypatch):
+    monkeypatch.setattr(generic,'fetch_page',lambda *a,**kw:('<meta property="og:title" content="Access denied">',URL))
+    compare=Mock(return_value=[]);monkeypatch.setattr(generic,'compare',compare)
+    result=generic.analyze_any_seller(URL,'Papilion Islak Mendil Lavanta 100 Yaprak')
+    assert compare.call_args.args[0]['title']=='Papilion Islak Mendil Lavanta 100 Yaprak'
+    assert result['price'] is None and result['identityVerified'] is False
+
+
+def test_barcode_hint_applies_even_when_page_has_metadata(monkeypatch):
+    monkeypatch.setattr(generic,'fetch_page',lambda *a,**kw:('<h1>Product loading</h1>',URL))
+    compare=Mock(return_value=[]);monkeypatch.setattr(generic,'compare',compare)
+    generic.analyze_any_seller(URL,'4006381333931')
+    assert compare.call_args.args[0]['gtin']=='4006381333931'
+
+
+def test_hint_cannot_overwrite_verified_input_product_identity(monkeypatch):
+    monkeypatch.setattr(generic,'fetch_page',lambda *a,**kw:(page(),URL))
+    compare=Mock(return_value=[]);monkeypatch.setattr(generic,'compare',compare)
+    result=generic.analyze_any_seller(URL,'Different Product 4006381333931')
+    assert result['title']=='Example Brand Widget 100 ml' and result['input_price']==199.9
+    assert compare.call_args.args[0]['gtin']=='8692857016208'

@@ -1,4 +1,4 @@
-# CEBİMDE V3.78
+# CEBİMDE V3.79
 
 Price comparison and persistent target-price watches. Existing comparison providers and page styles are preserved.
 
@@ -36,6 +36,6 @@ Product input validation rejects campaign/category/search pages before any price
 
 Any public seller product URL can enter analysis, watch storage and free rechecks. Known marketplace campaign and listing URLs are rejected early. Other input pages are read for structured Product identity, GTIN, brand, model and title; missing identity falls back to page metadata, URL words or an optional user-provided name/barcode. An unverified title is not a verified price.
 
-Each generic analysis makes up to two free SearXNG queries, then checks up to four candidate pages concurrently. Only fresh structured TRY offers with matching identity and no conflicting pack, capacity or color are shown. Search snippets are never treated as prices. The existing four-marketplace comparison adapters remain in place; the generic flow and monitoring invoke no paid adapters. Styles are preserved. When the free search service is unavailable, the client retries generic analysis up to three times, 12 seconds apart; existing marketplace adapters are never retried by this path.
+Each generic analysis makes up to two free SearXNG queries, then checks up to six candidate pages concurrently, giving distinct merchants priority before repeated pages from the same merchant. Only fresh structured TRY offers with matching identity and no conflicting pack, capacity or color are shown. Search snippets are never treated as prices. The existing four-marketplace comparison adapters remain in place; the generic flow and monitoring invoke no paid adapters. Styles are preserved. When the free search service is unavailable, the client retries generic analysis up to three times, 12 seconds apart; existing marketplace adapters are never retried by this path.
 
 Public reads validate every redirect and DNS result, pin connections to a validated public IP, verify TLS against the original hostname, and bound response size and read time. Private networks and credentials in URLs are rejected. Blocked retailers, missing structured data and unindexed products can still yield no verified offers. Acceptance of a seller URL does not promise exhaustive coverage of all sellers.

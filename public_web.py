@@ -45,7 +45,7 @@ def fetch_page(value,budget=8):
         response=None
         try:
             response=pool.urlopen('GET',urlunsplit(('','',p.path or '/',p.query,'')),
-                headers={'Host':p.hostname,'User-Agent':'Mozilla/5.0 (compatible; CEBIMDE/3.78)','Accept':'text/html,application/xhtml+xml','Accept-Language':'tr-TR,tr;q=0.9'},
+                headers={'Host':p.hostname,'User-Agent':'Mozilla/5.0 (compatible; CEBIMDE/3.79)','Accept':'text/html,application/xhtml+xml','Accept-Language':'tr-TR,tr;q=0.9'},
                 assert_same_host=False,redirect=False,retries=False,preload_content=False,
                 timeout=urllib3.Timeout(connect=min(3,remaining),read=min(3,remaining),total=remaining))
             if response.status in (301,302,303,307,308):
