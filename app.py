@@ -35,6 +35,8 @@ app=Flask(__name__, static_folder='web', static_url_path='')
 from watch_store import watch_api, sign_snapshot
 from product_links import product_link, ProductLinkError
 app.register_blueprint(watch_api)
+from brochure_store import brochure_api
+app.register_blueprint(brochure_api)
 ALLOWED={'www.hepsiburada.com','hepsiburada.com','www.amazon.com.tr','amazon.com.tr','www.trendyol.com','trendyol.com','www.n11.com','n11.com'}
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36','Accept-Language':'tr-TR,tr;q=0.9,en;q=0.7'}
 
@@ -550,7 +552,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.83',watchMonitoring=1)
+def health():return jsonify(ok=True,service='cebimde',version='3.84',watchMonitoring=1,brochureReading=1)
 
 @app.get('/api/debug/external')
 def debug_external():
@@ -788,6 +790,8 @@ def product():
         best=offers[0]['price'] if offers else None
         savings=round(input_price-best,2) if input_price and best and input_price>best else 0
         result={'title':title,'input_source':host,'input_url':target,'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,'currency':'TRY' if offers else None,'savings':savings}
+        from brochure_store import find_brochures
+        result['brochureOffers']=find_brochures(base)
         result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
         return jsonify(ok=True,product=result)
     except ProductLinkError as e:

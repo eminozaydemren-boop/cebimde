@@ -158,6 +158,8 @@ def analyze_any_seller(target,hint=''):
             'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,
             'currency':'TRY' if offers else None,'savings':round(input_price-best,2) if input_price and best and input_price>best else 0,
             'identityVerified':bool(structured or offers),'searchMode':'open_web','similarOffers':base.get('_similar',[]),'brochureSources':base.get('_brochures',[]),'search':base.get('_search',{}),'inputRead':input_read}
+    from brochure_store import find_brochures
+    result['brochureOffers']=find_brochures(base)
     from watch_store import sign_snapshot
     result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
     return result

@@ -47,3 +47,24 @@ When the original merchant denies server reads, the product identity can remain 
 V3.83 lets the user continue with an unconfirmed candidate as a new input product. The selected page is fetched again through `mode=public` and must independently supply identity and a valid price before comparison or watch saving. The former blocked input is not reclassified as verified. This route never enters paid marketplace adapters, even when a candidate is on one of the original four marketplaces. Exact descriptive title token multisets may match despite word order changes; all identifier, brand and pack conflict checks still apply.
 
 V3.83 exposes brochure and comparison-source discovery separately. Source links do not claim a live price, an exact product match, an active campaign, branch availability or stock. They never enter price sorting, savings, signed snapshots or watch metadata. The displayed minimum is explicitly limited to found product-page offers; shipping and branch/member/brochure conditions are excluded.
+
+
+### V3.84: conditional brochure prices
+
+The existing free `price-watch.yml` workflow now has a separate public Ubuntu OCR job.
+It discovers current Anpa Gross catalogs from Katalog24, follows page image links,
+segments red price labels, and reads each isolated caption and raised decimal digits
+with Tesseract. Prices are not fixtures or search snippets. The worker imports public
+campaign cards using the existing repository-bound short-lived OIDC identity.
+Only requests/Pillow/Tesseract are used; Render does not run OCR or call a paid API.
+
+PostgreSQL retains the source page/image, image hash, product-card rectangle,
+source dates, merchant, and scope as printed in the campaign title. Matching requires
+brand, equal pack size, and descriptive words; one OCR character error is allowed
+for words of five or more letters, but never for the brand. Matches remain explicitly
+unconfirmed product variants and show the original image for checking. They never
+change the verified online minimum, savings, signed price snapshot, or alerts.
+Expired, future, and more-than-24-hour-stale imported cards are excluded. Stock and
+national availability are not asserted. The first supported brochure provider is
+Katalog24 and the first automatically scanned retailer is Anpa Gross; online seller
+discovery remains open to public sellers. This does not guarantee exhaustive coverage.

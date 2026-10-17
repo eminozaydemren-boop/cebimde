@@ -51,4 +51,4 @@ def test_unconfigured_server_keeps_existing_product_analysis(monkeypatch):
     monkeypatch.delenv('WATCH_SIGNING_SECRET')
     monkeypatch.delenv('DATABASE_URL',raising=False)
     assert watch_store.sign_snapshot(URL,123.45) is None
-    assert app.test_client().get('/health').json['version']=='3.83'
+    assert app.test_client().get('/health').json['version']=='3.84'

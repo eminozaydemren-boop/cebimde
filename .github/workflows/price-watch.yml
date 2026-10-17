@@ -58,3 +58,19 @@ jobs:
           # Only aggregate counters are public. No product URLs, titles, or owner keys.
           print(json.dumps({'processed':processed,'verified':verified,'notifications':notifications}))
           PY
+  brochures:
+    if: github.repository == 'eminozaydemren-boop/cebimde' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install free image text reader
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-tur
+          python3 -m pip install --quiet requests Pillow
+      - name: Read current public brochures and import dated campaign cards
+        env:
+          BROCHURE_OCR_LANGUAGE: tur+eng
+          OMP_THREAD_LIMIT: '1'
+        run: python3 -u scripts/import_brochures.py
