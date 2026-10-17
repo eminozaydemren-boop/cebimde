@@ -15,6 +15,7 @@ def initialize(conn):
     )''')
     conn.execute('CREATE INDEX IF NOT EXISTS brochure_expiry_idx ON brochure_cards(expires_on)')
     conn.execute("ALTER TABLE brochure_cards ADD COLUMN IF NOT EXISTS search_text TEXT NOT NULL DEFAULT ''")
+    conn.execute("CREATE INDEX IF NOT EXISTS brochure_image_idx ON brochure_cards((data->>'imageUrl'))")
 
 def valid_card(card,today=None):
     today=today or datetime.now(timezone.utc).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Istanbul')).date()
@@ -92,6 +93,10 @@ def import_cards():
 
 
 def save_cards(conn,cards):
+    # A changed source image supersedes prices read from its earlier image bytes.
+    images={c['imageUrl']:c['imageSha256'] for c in cards}
+    for image,digest in images.items():
+        conn.execute("DELETE FROM brochure_cards WHERE data->>'imageUrl'=%s AND data->>'imageSha256'<>%s",(image,digest))
     for card in cards:
         # Only retain documented public product/campaign fields.
         item={k:card[k] for k in ('title','text','price','region','startDate','endDate','campaign','scope','merchant','sourceUrl','imageUrl','imageSha256')}

@@ -16,7 +16,7 @@ def structured_product(page,url):
     path=urlparse(url).path.rstrip('/').casefold()
     exact=[p for p in products if urlparse(urljoin(url,str(p.get('url') or ''))).path.rstrip('/').casefold()==path and p.get('url')]
     candidates=exact or ([products[0]] if len(products)==1 and not products[0].get('url') else [])
-    if not candidates:return None
+    if not candidates:return meta_product(page,url)
     p=candidates[0];brand=p.get('brand')
     if isinstance(brand,list):brand=brand[0] if len(brand)==1 else None
     brand=brand.get('name') if isinstance(brand,dict) else brand
@@ -89,3 +89,37 @@ def plausible_product(base,candidate):
     risky={'yedek','aksesuar','kilif','set','paket'}
     if (set(other.split())-set(title.split()))&risky:return False
     return True
+
+
+def meta_product(page,url):
+    """Product Open Graph metadata, explicitly bound to this page and TRY currency."""
+    from html.parser import HTMLParser
+    from urllib.parse import unquote
+    from app import clean_price
+    class Meta(HTMLParser):
+        def __init__(self):super().__init__();self.values={}
+        def handle_starttag(self,tag,attrs):
+            a=dict(attrs)
+            if tag=='meta':
+                key=(a.get('property') or a.get('name') or '').casefold()
+                if key:self.values.setdefault(key,a.get('content','').strip())
+    p=Meta()
+    try:p.feed(page)
+    except Exception:return None
+    m=p.values
+    if m.get('og:type','').casefold() not in ('product','og:product'):return None
+    title=m.get('og:title');canonical=urlparse(urljoin(url,m.get('og:url','')));target=urlparse(url)
+    if not title or not m.get('og:url') or canonical.scheme not in ('https','http') or canonical.username or canonical.password:return None
+    if (canonical.hostname or '').removeprefix('www.')!=(target.hostname or '').removeprefix('www.'):return None
+    if unquote(canonical.path).rstrip('/')!=unquote(target.path).rstrip('/'):return None
+    base=dict(title=title[:250],brand=m.get('product:brand'),sku=m.get('product:retailer_item_id'),
+              gtin=m.get('product:gtin'),mpn=None,url=url,price=None,currency=None)
+    availability=(m.get('product:availability') or '').casefold().replace('_','').replace(' ','')
+    if availability and availability not in ('instock','available','limitedavailability'):return base
+    if m.get('product:price:currency','').upper() not in ('TRY','TL','₺'):return base
+    # A single numeric amount, never body text, percentages, ranges or a guessed currency.
+    raw=m.get('product:price:amount','')
+    if not re.fullmatch(r'\d+(?:[.,]\d{1,2})?',raw):return base
+    price=clean_price(raw)
+    if price and math.isfinite(price) and 0<price<100000000:base.update(price=price,currency='TRY')
+    return base

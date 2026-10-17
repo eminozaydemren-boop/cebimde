@@ -89,3 +89,10 @@ price was read. OCR supports more caption placements and red/yellow label geomet
 unreadable prices remain absent. Brochure identity stays unconfirmed and excluded
 from online minima, savings, and notifications. Public-seller web discovery remains
 independent of brochure directory membership. Coverage is not exhaustive worldwide.
+
+Public seller extraction also accepts page-bound Product Open Graph metadata when
+JSON-LD is absent. It requires a matching canonical host/path, an explicit product
+type/title, and an explicit TRY price amount; unknown currency, stock rejection,
+ranges, percentages and other-page metadata cannot become prices. Updated brochure
+image hashes invalidate older prices from that image URL; expired cached brochure
+records are cleaned during directory refresh.

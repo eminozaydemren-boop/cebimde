@@ -61,6 +61,8 @@ def register_directory():
                     next_page=CASE WHEN brochure_catalogs.start_date<>EXCLUDED.start_date OR brochure_catalogs.end_date<>EXCLUDED.end_date THEN 1 ELSE brochure_catalogs.next_page END,
                     completed_at=CASE WHEN brochure_catalogs.start_date<>EXCLUDED.start_date OR brochure_catalogs.end_date<>EXCLUDED.end_date THEN NULL ELSE brochure_catalogs.completed_at END,
                     start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,seen_at=NOW()''',(c['url'],c['merchantUrl'],c['startDate'],c['endDate']))
+            conn.execute("DELETE FROM brochure_cards WHERE expires_on<CURRENT_DATE-7")
+            conn.execute("DELETE FROM brochure_catalogs WHERE end_date<CURRENT_DATE-14")
         return jsonify(ok=True,merchants=len(merchants),catalogs=len(catalogs))
     except Exception:return jsonify(ok=False,error='Dizin kaydedilemedi'),503
 
