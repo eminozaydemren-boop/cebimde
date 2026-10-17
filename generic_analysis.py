@@ -106,8 +106,10 @@ def compare(base):
 
 def analyze_any_seller(target,hint=''):
     target=normalize_url(target);source=target
-    try:page=fetch_page(target,budget=7)
-    except Exception:page=None
+    input_read={}
+    try:page=fetch_page(target,budget=7,diagnostics=input_read)
+    except Exception as error:
+        input_read['error']=type(error).__name__;page=None
     base=None;structured=False
     if page:
         body,source=page
@@ -140,7 +142,7 @@ def analyze_any_seller(target,hint=''):
     result={'title':base['title'],'input_source':urlparse(source).hostname.removeprefix('www.'),'input_url':target,
             'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,
             'currency':'TRY' if offers else None,'savings':round(input_price-best,2) if input_price and best and input_price>best else 0,
-            'identityVerified':bool(structured or offers),'searchMode':'open_web','search':base.get('_search',{})}
+            'identityVerified':bool(structured or offers),'searchMode':'open_web','search':base.get('_search',{}),'inputRead':input_read}
     from watch_store import sign_snapshot
     result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
     return result

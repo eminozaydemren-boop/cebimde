@@ -30,10 +30,12 @@ def public_addresses(host,port):
     return sorted(addresses,key=lambda ip: ipaddress.ip_address(ip).version)
 
 
-def fetch_page(value,budget=8):
+def fetch_page(value,budget=8,diagnostics=None):
+    diagnostics=diagnostics if diagnostics is not None else {}
     url=normalize_url(value);deadline=time.monotonic()+budget
     for _ in range(4):
         p=urlsplit(url);port=443 if p.scheme=='https' else 80
+        diagnostics['stage']='dns'
         ips=public_addresses(p.hostname,port)
         remaining=deadline-time.monotonic()
         if remaining<=0:return None
@@ -44,10 +46,12 @@ def fetch_page(value,budget=8):
         else:pool=urllib3.HTTPConnectionPool(ips[0],port=port)
         response=None
         try:
+            diagnostics['stage']='connect'
             response=pool.urlopen('GET',urlunsplit(('','',p.path or '/',p.query,'')),
                 headers={'Host':p.hostname,'User-Agent':'Mozilla/5.0 (compatible; CEBIMDE/3.80)','Accept':'text/html,application/xhtml+xml','Accept-Language':'tr-TR,tr;q=0.9'},
                 assert_same_host=False,redirect=False,retries=False,preload_content=False,
                 timeout=urllib3.Timeout(connect=min(3,remaining),read=min(3,remaining),total=remaining))
+            diagnostics.update(stage='response',status=response.status)
             if response.status in (301,302,303,307,308):
                 location=response.headers.get('Location')
                 if not location:return None
@@ -55,9 +59,11 @@ def fetch_page(value,budget=8):
             if response.status!=200:return None
             content_type=response.headers.get('Content-Type','')
             if not any(kind in content_type.lower() for kind in ('text/html','application/xhtml+xml')):return None
+            diagnostics['stage']='body'
             data=bytearray()
             for chunk in response.stream(16384,decode_content=True):
                 data.extend(chunk)
+                diagnostics['bytes']=len(data)
                 if len(data)>4*1024*1024 or time.monotonic()>=deadline:return None
                 # Large storefront menus need not download after the main head offer is complete.
                 head_end=data.lower().find(b'</head>')
@@ -65,10 +71,12 @@ def fetch_page(value,budget=8):
                     from product_data import structured_product
                     head=bytes(data[:head_end+7]).decode('utf-8',errors='replace')
                     product=structured_product(head,url)
-                    if product and product.get('price') is not None:return head,url
+                    if product and product.get('price') is not None:
+                        diagnostics['stage']='product_head';return head,url
             charset=re.search(r'charset=([\w-]+)',content_type,re.I)
             try:body=data.decode(charset.group(1) if charset else 'utf-8',errors='replace')
             except LookupError:body=data.decode('utf-8',errors='replace')
+            diagnostics['stage']='complete'
             return body,url
         finally:
             if response is not None:response.close()
