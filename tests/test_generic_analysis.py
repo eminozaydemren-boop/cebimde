@@ -187,3 +187,29 @@ def test_same_consumer_title_words_match_despite_word_order():
     assert same_product(a,{'title':"Famılıa Plus Natural Tuvalet Kağıdı 40'Lı",'brand':'FAMILIA'})
     assert not same_product(a,{'title':"Familia Natural Tuvalet Kağıdı 40'Lı",'brand':'Familia'})
     assert not same_product(a,{'title':"Familia Plus Natural Tuvalet Kağıdı 32'Lı",'brand':'Familia'})
+
+
+def test_brochure_discovery_never_turns_search_mentions_into_price_offers(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    def search(url,**kw):
+        brochure='broşür aktüel katalog' in kw['params']['q']
+        body=('<a href="https://campaigns.com/brosur/familia-40li">239 TL brochure</a>' if brochure else
+              '<a href="https://www.akakce.com/tuvalet-kagidi/familia-40li.html">239 TL</a><a href="https://retailer.com/familia-40li">Product</a>')
+        return Mock(ok=True,text=body)
+    monkeypatch.setattr(generic.requests,'get',search)
+    base={'title':'Familia Natural Tuvalet Kagidi 40 li','url':URL}
+    candidates=generic.discover(base)
+    assert candidates==['https://retailer.com/familia-40li']
+    assert base['_brochures'][0]['kind']=='brochure'
+    assert len(base['_brochures'])==2
+    assert all('price' not in source and source['identityConfirmed'] is False for source in base['_brochures'])
+
+
+def test_successful_brochure_search_does_not_hide_failed_price_search(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    def search(url,**kw):
+        return Mock(ok='broşür aktüel katalog' in kw['params']['q'],text='<a href="https://retailer.com/brosur/familia">Campaign</a>')
+    monkeypatch.setattr(generic.requests,'get',search)
+    base={'title':'Familia Natural Tuvalet Kagidi 40 li','url':URL}
+    assert generic.discover(base)==[]
+    assert base['_search']['status']=='unavailable' and base['_brochures']

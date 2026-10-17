@@ -54,20 +54,30 @@ def discover(base):
     if not barcode and not model:queries.append(title[:180]+' fiyat satın al')
     queries.append('"'+title[:180]+'" fiyat')
     queries=list(dict.fromkeys(queries))[:2]
+    price_query_count=len(queries)
+    queries.append(title[:160]+' broşür aktüel katalog')
     def search(query):
         try:
             r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.78','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=7)
             return (r.ok,searx_result_urls(r.text,endpoint) if r.ok else [])
         except requests.RequestException:return (False,[])
-    urls=[];success=False
+    urls=[];success=False;brochures=[]
     blocked=('google.com','bing.com','duckduckgo.com','youtube.com','facebook.com','instagram.com','pinterest.com','tiktok.com','akakce.com','cimri.com','epey.com','x.com','twitter.com','web.archive.org')
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        for ok,found in pool.map(search,queries):
-            success=success or ok
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        for index,(ok,found) in enumerate(pool.map(search,queries)):
+            if index<price_query_count:success=success or ok
             for url in found:
                 try:
                     url=normalize_url(url);host=urlparse(url).hostname
-                    if host==urlparse(endpoint).hostname or any(host==h or host.endswith('.'+h) for h in blocked):continue
+                    path=unquote(urlparse(url).path).casefold()
+                    comparison=any(host==h or host.endswith('.'+h) for h in ('akakce.com','cimri.com'))
+                    brochure=bool(re.search(r'/(?:brosur(?:ler)?|aktuel|katalog)[^/]*(?:/|[-.]|$)',path))
+                    social=any(host==h or host.endswith('.'+h) for h in blocked if h not in ('akakce.com','cimri.com'))
+                    if host==urlparse(endpoint).hostname or social:continue
+                    if comparison or brochure:
+                        if url not in [item['url'] for item in brochures]:brochures.append({'url':url,'source':host.removeprefix('www.'),'kind':'brochure' if brochure else 'comparison','identityConfirmed':False})
+                    if comparison or brochure:continue
+                    if index>=price_query_count:continue
                     if url!=base['url'] and url not in urls:urls.append(url)
                 except ValueError:continue
     # Rank by product identifiers in the URL, never by a fixed retailer list.
@@ -83,6 +93,7 @@ def discover(base):
         if host in hosts:duplicates.append(url)
         else:hosts.add(host);distinct.append(url)
     selected=(distinct+duplicates)[:6]
+    base['_brochures']=sorted(brochures,key=lambda item:0 if item['kind']=='brochure' else 1)[:4]
     base['_search']={'status':'completed' if success else 'unavailable','candidates':len(selected)}
     return selected
 
@@ -146,7 +157,7 @@ def analyze_any_seller(target,hint=''):
     result={'title':base['title'],'input_source':urlparse(source).hostname.removeprefix('www.'),'input_url':target,
             'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,
             'currency':'TRY' if offers else None,'savings':round(input_price-best,2) if input_price and best and input_price>best else 0,
-            'identityVerified':bool(structured or offers),'searchMode':'open_web','similarOffers':base.get('_similar',[]),'search':base.get('_search',{}),'inputRead':input_read}
+            'identityVerified':bool(structured or offers),'searchMode':'open_web','similarOffers':base.get('_similar',[]),'brochureSources':base.get('_brochures',[]),'search':base.get('_search',{}),'inputRead':input_read}
     from watch_store import sign_snapshot
     result['watchReceipt']=sign_snapshot(target,best,base=base,offers=offers)
     return result
