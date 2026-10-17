@@ -8,6 +8,7 @@ from public_web import normalize_url,fetch_page
 from product_data import structured_product,same_product,plausible_product
 from price_monitor import verified_offer
 from product_links import product_link
+from catalog_discovery import discover_catalogs
 
 class ProductInfoRequired(ValueError):pass
 
@@ -72,7 +73,7 @@ def url_title(url):
     return title[:250] if len(title)>=12 and len(title.split())>=2 else None
 
 
-def discover(base):
+def discover_web(base):
     from app import model_token
     endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
     if not endpoint:
@@ -91,7 +92,7 @@ def discover(base):
         try:
             # Free Render instances can need tens of seconds to wake. A seven-second
             # deadline discarded successful searches, independently of product/store.
-            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.86','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=(10,30))
+            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.87','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=(5,12))
             found=search_links(r.text,endpoint) if r.ok else []
             empty=bool(re.search(r'id=["\']no_results["\']|No results were found',r.text,re.I))
             upstream_failed=bool(re.search(r'class=["\']response-error["\']',r.text,re.I)) and not found
@@ -137,6 +138,41 @@ def discover(base):
     return selected
 
 
+def discover(base):
+    """Catalog discovery works independently of the web search service."""
+    catalog=discover_catalogs(base)
+    base['_catalogQuotes']=catalog.get('quotes',[])
+    if catalog.get('identity') and base.get('_inputStructured') is False:
+        # Recover names only when the catalog explicitly links the submitted
+        # merchant product page. Catalog prices never enter verified offers.
+        base.update(catalog['identity'])
+    urls=[]
+    for url in catalog['urls']:
+        try:
+            url=candidate_link(url)
+            if url!=base['url'] and url not in urls:urls.append(url)
+        except ValueError:continue
+    # Catalogs already expose real merchant destinations. Do not make three
+    # failing web queries when independent discovery has usable candidates.
+    if not urls:
+        urls=discover_web(base)
+    else:
+        base['_search']={'status':'completed','provider':'public_catalogs','candidates':len(urls),'attempts':[]}
+        base['_brochures']=catalog['sources'][:4]
+    base['_search']['catalogs']=catalog['diagnostics']
+    # Keep merchant diversity across catalog sources and remove tracking duplicates.
+    distinct=[];duplicates=[];hosts=set();paths=set()
+    for url in urls:
+        p=urlparse(url);key=(p.hostname,p.path)
+        if key in paths:continue
+        paths.add(key);host=p.hostname.removeprefix('www.')
+        if host in hosts:duplicates.append(url)
+        else:hosts.add(host);distinct.append(url)
+    selected=(distinct+duplicates)[:12]
+    base['_search']['candidates']=len(selected)
+    return selected
+
+
 def compare(base):
     urls=discover(base)
     def verify(url):
@@ -155,6 +191,12 @@ def compare(base):
     # Check two batches with six concurrent reads. Listings and repeated merchants
     # no longer consume the entire first batch. Search text never becomes a price.
     with ThreadPoolExecutor(max_workers=6) as pool:out=list(pool.map(verify,urls[:12]))
+    if not any(item and item.get('identityConfirmed') is not False for item in out) and not base.get('_catalogQuotes') and base.get('_search',{}).get('provider')=='public_catalogs':
+        catalog_status=base['_search'];sources=base.get('_brochures',[])
+        extra=[url for url in discover_web(base) if url not in urls][:6]
+        web_status=base['_search'];base['_search']=dict(catalog_status,fallbackWebStatus=web_status['status'])
+        base['_brochures']=(sources+base.get('_brochures',[]))[:4]
+        with ThreadPoolExecutor(max_workers=6) as pool:out+=list(pool.map(verify,extra))
     base['_similar']=[x for x in out if x and x.get('identityConfirmed') is False]
     return [x for x in out if x and x.get('identityConfirmed') is not False]
 
@@ -186,6 +228,7 @@ def analyze_any_seller(target,hint=''):
         if hint:base['title']=hint
         if barcode:base['gtin']=barcode
     base.setdefault('url',source)
+    base['_inputStructured']=structured
     offers=[]
     if base.get('price') is not None:
         offers.append({'source':urlparse(source).hostname.removeprefix('www.'),'price':base['price'],'url':source,'title':base['title']})
@@ -197,7 +240,7 @@ def analyze_any_seller(target,hint=''):
     result={'title':base['title'],'input_source':urlparse(source).hostname.removeprefix('www.'),'input_url':target,
             'input_price':input_price,'offers':offers,'price':best,'price_source':offers[0]['source'] if offers else None,
             'currency':'TRY' if offers else None,'savings':round(input_price-best,2) if input_price and best and input_price>best else 0,
-            'identityVerified':bool(structured or offers),'searchMode':'open_web','similarOffers':base.get('_similar',[]),'brochureSources':base.get('_brochures',[]),'search':base.get('_search',{}),'inputRead':input_read}
+            'identityVerified':bool(structured or offers),'searchMode':'open_web','similarOffers':base.get('_similar',[]),'catalogOffers':base.get('_catalogQuotes',[]),'brochureSources':base.get('_brochures',[]),'search':base.get('_search',{}),'inputRead':input_read}
     from brochure_store import find_brochures
     result['brochureOffers']=find_brochures(base)
     from watch_store import sign_snapshot

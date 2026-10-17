@@ -6,6 +6,11 @@ from product_data import same_product
 from app import app
 
 URL='https://www.different-seller.com/brand-widget-100ml-p-123'
+
+@pytest.fixture(autouse=True)
+def independent_catalogs_are_mocked_in_unit_tests(monkeypatch):
+    monkeypatch.setattr(generic,'discover_catalogs',lambda base:{'urls':[],'sources':[],'diagnostics':[]})
+
 def page():
     product={'@type':'Product','name':'Example Brand Widget 100 ml','url':URL,'brand':{'name':'Example'},'gtin13':'8692857016208',
              'offers':{'@type':'Offer','price':199.9,'priceCurrency':'TRY','availability':'https://schema.org/InStock'}}
@@ -221,7 +226,7 @@ def test_search_waits_for_free_instance_instead_of_discarding_after_seven_second
     monkeypatch.setattr(generic.requests,'get',get)
     base={'title':'Brand ABC123','url':URL}
     assert generic.discover(base)==['https://independent-shop.com/ABC123']
-    assert all(call.kwargs['timeout']==(10,30) for call in get.call_args_list)
+    assert all(call.kwargs['timeout']==(5,12) for call in get.call_args_list)
 
 
 def test_result_articles_exclude_footer_error_and_navigation_links():

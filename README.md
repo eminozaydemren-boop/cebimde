@@ -122,3 +122,27 @@ failure, the client stops automatic identical retries and identifies a search
 source failure rather than asking the user to rename the product. Live tests
 found intermittent verified offers but also upstream rate limits/access denials;
 this release does not establish reliable universal product discovery.
+
+
+### V3.87: independent catalog discovery
+
+Generic product discovery first searches the public Cimri and Epey catalogs by
+brand/quantity or model, ranks product pages against the full input title, and
+extracts merchant Offer URLs and explicit Epey data-link destinations. Up to
+four catalog product pages and twelve merchant pages are read with bounded,
+DNS-pinned public requests. No API keys, paid providers or per-product URL
+tables are used. The SearXNG fallback has a 5-second connection and 12-second
+read deadline to keep the combined request within the web worker budget.
+
+An unreadable source product's title can be recovered only when the main catalog
+Product schema explicitly links the exact submitted merchant product page.
+Product-defining query parameters are preserved when checking that link.
+Catalog prices are never used as verified merchant prices.
+
+Explicit Epey offer-card prices are displayed separately with the catalog URL,
+merchant URL, original offer title, read time and a clear unverified label.
+Conflicting pack sizes, colors and models are rejected. Catalog quotes do not
+affect minimum verified price, savings, watch receipts or target notifications.
+Only fresh matching merchant reads can enter those calculations. This extends
+discovery to the merchants in the catalogs; it cannot guarantee all products or
+every shop on the internet.
