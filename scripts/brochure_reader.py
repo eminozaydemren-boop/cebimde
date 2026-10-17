@@ -66,7 +66,7 @@ def metadata(parser,url,today=None):
 def ocr(image,psm=11,whitelist=None,tsv=False):
     with tempfile.TemporaryDirectory() as td:
         f=Path(td)/'image.png';image.save(f)
-        cmd=['tesseract',str(f),'stdout','--psm',str(psm),'-l',os.getenv('BROCHURE_OCR_LANGUAGE','eng')]
+        cmd=['tesseract',str(f),'stdout','--psm',str(psm),'-l','eng' if whitelist else os.getenv('BROCHURE_OCR_LANGUAGE','eng')]
         if whitelist:cmd+=['-c','tessedit_char_whitelist='+whitelist]
         if tsv:cmd+=['tsv']
         r=subprocess.run(cmd,capture_output=True,text=True,timeout=25,check=True)
@@ -85,8 +85,11 @@ def red_labels(image):
             for k in (j-1 if x else -1,j+1 if x<w-1 else -1,j-w,j+w):
                 if 0<=k<len(mask) and mask[k]:mask[k]=0;q.append(k)
         x0,x1=min(xs),max(xs)+1;y0,y1=min(ys),max(ys)+1;bw=x1-x0;bh=y1-y0
-        if .045*w<bw<.2*w and .015*h<bh<.065*h and 1.35<bw/bh<4 and len(xs)/(bw*bh)>.55:
-            boxes.append((x0*3,y0*3,x1*3,y1*3))
+        if .045*w<bw<.45*w and .015*h<bh<.18*h and 1.35<bw/bh<4:
+            fill=len(xs)/(bw*bh)
+            pixels=list(small.crop((x0,y0,x1,y1)).getdata())
+            yellow=sum(r>150 and g>120 and b<110 for r,g,b in pixels)/len(pixels)
+            if fill>.55 or (fill>.08 and yellow>.4):boxes.append((x0*3,y0*3,x1*3,y1*3))
     return sorted(boxes,key=lambda b:(b[1],b[0]))
 
 def number(text):
@@ -98,9 +101,11 @@ def number(text):
 
 def price_from_label(image,box):
     from PIL import ImageOps
-    im=image.crop(box).getchannel('G')
-    im=im.crop((4,4,im.width-3,int(im.height*.77)))
-    mask=im.point(lambda x:0 if x>165 else 255)
+    rgb=image.crop(box).convert('RGB')
+    yellow=sum(r>150 and g>120 and b<110 for r,g,b in rgb.getdata())/(rgb.width*rgb.height)>.3
+    im=rgb.convert('L') if yellow else rgb.getchannel('G')
+    im=im.crop((3,3,im.width-3,im.height-3))
+    mask=im.point(lambda x:0 if (x<105 if yellow else x>165) else 255)
     # Raised cents have another baseline: OCR them separately rather than dropping
     # cents or interpreting 59,90 as 9,90. The ink geometry determines the split.
     w,h=mask.size;pixels=mask.load();seen=set();parts=[]
@@ -112,25 +117,35 @@ def price_from_label(image,box):
                 a,b=q.popleft();xx.append(a);yy.append(b)
                 for c,d in ((a-1,b),(a+1,b),(a,b-1),(a,b+1)):
                     if 0<=c<w and 0<=d<h and not pixels[c,d] and (c,d) not in seen:seen.add((c,d));q.append((c,d))
-            if len(xx)>=3:parts.append((min(xx),min(yy),max(xx)+1,max(yy)+1))
+            if len(xx)>=3:
+                bounds=(min(xx),min(yy),max(xx)+1,max(yy)+1)
+                if bounds[2]-bounds[0]>.9*w and bounds[3]-bounds[1]>.8*h:
+                    for a,b in zip(xx,yy):pixels[a,b]=255
+                else:parts.append(bounds)
     if not parts:return None
     height=max(p[3]-p[1] for p in parts)
     big=[p for p in parts if p[3]-p[1]>=height*.7]
     if not big:return None
     right=max(p[2] for p in big)
-    cents=[p for p in parts if p[0]>=right and height*.3<=p[3]-p[1]<=height*.65 and p[1]<height*.3]
-    if not cents:return None
+    cents=[p for p in parts if p[0]>=right and height*.3<=p[3]-p[1]<=height*.65 and p[1]<=min(b[1] for b in big)+height*.3]
+    if not cents:
+        plain=ImageOps.expand(mask.resize((mask.width*4,mask.height*4)),border=20,fill=255)
+        a=number(ocr(plain,6,'0123456789,.'));b=number(ocr(plain,7,'0123456789,.'))
+        return a if a is not None and a==b else None
     left=min(p[0] for p in cents)
     punctuation=[p for p in parts if right<=p[0]<left and p[1]>height*.4 and p[3]-p[1]<height*.4]
     if not punctuation:return None
-    def digits(bounds,cents=False):
-        crop=mask.crop(bounds);crop=ImageOps.expand(crop.resize((crop.width*6,crop.height*6)),border=18,fill=255)
-        a=ocr(crop,6,'0123456789').strip()
+    def digits(bounds,cents=False,single=False):
+        crop=mask.crop(bounds);scale=160/max(1,crop.height);crop=ImageOps.expand(crop.resize((max(1,int(crop.width*scale)),160)),border=24,fill=255)
+        a=ocr(crop,10 if single else (6 if cents else 8),'0123456789').strip()
         second=crop.resize((int(crop.width*1.3),int(crop.height*1.3))) if cents else crop
-        b=ocr(second,6 if cents else 7,'0123456789').strip()
+        b=ocr(second,13 if single else (6 if cents else 13),'0123456789').strip()
         return a if a==b and a.isdigit() else None
-    whole=digits((min(p[0] for p in big),0,right,h))
+    whole=digits((min(p[0] for p in big),min(p[1] for p in big),right,max(p[3] for p in big)))
     decimal=digits((left,min(p[1] for p in cents),max(p[2] for p in cents),max(p[3] for p in cents)),True)
+    if not decimal and len(cents)==2:
+        chars=[digits(bounds,True,True) for bounds in sorted(cents)]
+        if all(c and len(c)==1 for c in chars):decimal=''.join(chars)
     if not whole or len(whole)>6 or not decimal or len(decimal)!=2:return None
     return number(whole+','+decimal)
 
@@ -142,33 +157,34 @@ def read_image(raw):
     return im.convert('RGB')
 
 def extract_cards(image):
-    labels=red_labels(image)
-    # Read text once for each page, keeping bounding boxes for isolated product cards.
-    words=[]  # OCR is confined to each isolated caption, not unrelated page text.
-    out=[]
+    from PIL import ImageOps
+    labels=red_labels(image);out=[]
     for box in labels:
         x,y,right,bottom=box;bw=right-x;bh=bottom-y
         same_row=[b[0] for b in labels if abs(b[1]-y)<bh*.6 and b[0]>right]
         x_end=min(same_row) if same_row else min(image.width,x+bw*2.3)
-        if x_end-x>image.width*.42:continue
         below=[b[1] for b in labels if abs(b[0]-x)<bw*.4 and b[1]>bottom]
         y_end=min(below) if below else min(image.height,y+image.height*.24)
-        if y_end-y>image.height*.42:continue
-        def text_in(bounds):
-            a,b,c,d=bounds
-            return ' '.join(w['text'] for w in words if w.get('text','').strip() and float(w['conf'])>=20
-                and a<=int(w['left'])+int(w['width'])/2<c and b<=int(w['top'])+int(w['height'])/2<d)
-        title_box=(right+1,y-3,min(x_end-10,image.width),min(y_end,y+bh*1.5))
-        if title_box[2]<=title_box[0]:continue
-        from PIL import ImageOps
-        crop=image.crop(title_box).convert('L');crop=ImageOps.expand(crop.resize((crop.width*4,crop.height*4)),border=30,fill=255)
-        title=' '.join(ocr(crop,6).split())
-        if len(title)<8:continue
         price=price_from_label(image,box)
         if price is None:continue
-        text=title+' '+text_in((x,y,x_end,y_end))
-        out.append(dict(title=title[:250],text=text[:1500],price=price,
-                        region=[round(x/image.width,5),round(y/image.height,5),round(x_end/image.width,5),round(y_end/image.height,5)]))
+        rgb=image.crop(box).convert('RGB')
+        yellow=sum(r>150 and g>120 and b<110 for r,g,b in rgb.getdata())/(rgb.width*rgb.height)>.3
+        side=(right+1,max(0,y-3),min(x_end-10,image.width),min(y_end,y+bh*1.5))
+        above=(max(0,x-bw*.25),max(0,y-image.height*.09),min(image.width,right+bw*.3),y-3)
+        left=(max(0,x-image.width*.32),max(0,y-image.height*.12),x-4,min(image.height,y+bh*.55))
+        regions=[above,side] if yellow else ([left,above,side] if bw>image.width*.22 else [side,above])
+        title=None;caption=None
+        for bounds in regions:
+            if bounds[2]<=bounds[0] or bounds[3]<=bounds[1]:continue
+            crop=image.crop(tuple(int(v) for v in bounds)).convert('L')
+            crop=ImageOps.expand(crop.resize((crop.width*3,crop.height*3)),border=30,fill=255)
+            candidate=' '.join(ocr(crop,6).split())
+            if len(re.findall(r'[^\W\d_]{3,}',candidate))>=2:
+                title=candidate[:250];caption=bounds;break
+        if not title:continue
+        region=(min(x,caption[0]),min(y,caption[1]),max(right,caption[2]),max(bottom,caption[3]))
+        out.append(dict(title=title,text=title,price=price,
+                        region=[round(region[0]/image.width,5),round(region[1]/image.height,5),round(region[2]/image.width,5),round(region[3]/image.height,5)]))
     return out
 
 def scan_catalog(url,max_pages=32):
@@ -197,9 +213,73 @@ def discover_catalogs(index_url):
         if urlparse(url).hostname=='katalog24.com.tr' and re.search(r'/(?:katalog-[^/]+|brosur/\d+)$',urlparse(url).path) and url not in urls:urls.append(url)
     return urls[:4]
 
-if __name__=='__main__':
-    import sys
-    urls=sys.argv[1:] or discover_catalogs('https://katalog24.com.tr/anpa-gross')
-    rows=[]
-    for url in urls[:4]:rows+=scan_catalog(url)
-    print(json.dumps({'cards':rows},ensure_ascii=False))
+class DirectoryHTML(CatalogHTML):
+    def __init__(self):
+        super().__init__();self.merchants=[];self.catalogs=[];self.indexes=[];self.active=None
+    def handle_starttag(self,tag,attrs):
+        super().handle_starttag(tag,attrs);a=dict(attrs)
+        if tag=='div' and 'brochure-list-ite' in a.get('class',''):
+            self.active={k:a.get(k,'') for k in ('af','at','t','fi')}
+        if tag=='a':
+            if 'shop-list-link' in a.get('class',''):
+                self.merchants.append({'url':a.get('href',''),'name':a.get('title','').removesuffix(' kataloglar ve teklifler')})
+            if 'btn-block' in a.get('class','') and a.get('title'):self.indexes.append(a.get('href',''))
+            if 'brochure-list-link' in a.get('class','') and self.active:
+                self.catalogs.append(dict(self.active,url=a.get('href',''),title=a.get('title','')));self.active=None
+
+def parse_directory(body):
+    p=DirectoryHTML();p.feed(body);return p
+
+def provider_url(url):
+    p=urlparse(url)
+    return p.scheme=='https' and p.hostname=='katalog24.com.tr' and not p.username and not p.password and not p.port
+
+def discover_directory():
+    """Discover every merchant listed by the provider; no merchant whitelist."""
+    p=parse_directory(read('https://katalog24.com.tr/'))
+    return [m for m in p.merchants if provider_url(m['url']) and re.fullmatch(r'/magaza/[\w-]+',urlparse(m['url']).path)][:500]
+
+def merchant_catalogs(merchant):
+    from datetime import datetime,timezone
+    from zoneinfo import ZoneInfo
+    p=parse_directory(read(merchant['url']))
+    indexes=[u for u in p.indexes if provider_url(u) and re.fullmatch(r'/[\w-]+',urlparse(u).path)]
+    if not indexes:return []
+    index=indexes[-1];p=parse_directory(read(index));today=datetime.now(ZoneInfo('Europe/Istanbul')).date();out=[]
+    main=metadata(p,index,today)
+    if main:
+        event=next((d for d in p.scripts if isinstance(d,dict) and d.get('@type')=='SaleEvent'),{})
+        canonical=event.get('url')
+        out.append(dict(url=canonical if isinstance(canonical,str) and provider_url(canonical) else index,
+                        merchantUrl=merchant['url'],merchant=merchant['name'],startDate=main['startDate'],endDate=main['endDate']))
+    for item in p.catalogs:
+        try:
+            start=datetime.fromtimestamp(int(item['af']),timezone.utc).astimezone(ZoneInfo('Europe/Istanbul')).date()
+            end=datetime.fromtimestamp(int(item['at']),timezone.utc).astimezone(ZoneInfo('Europe/Istanbul')).date()
+            if start<=today<=end and 0<=(end-start).days<=60 and provider_url(item['url']):
+                out.append(dict(url=item['url'],merchantUrl=merchant['url'],merchant=merchant['name'],startDate=start.isoformat(),endDate=end.isoformat()))
+        except (ValueError,OverflowError):continue
+    return list({c['url']:c for c in out if (date.fromisoformat(c['endDate'])-date.fromisoformat(c['startDate'])).days<=60}.values())[:100]
+
+def scan_batch(url,start_page=1,page_count=3):
+    """Resume a large catalog in bounded batches instead of skipping it entirely."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    p=parse(read(url));meta=metadata(p,url,datetime.now(ZoneInfo('Europe/Istanbul')).date())
+    if not meta:return dict(cards=[],nextPage=1,complete=True,state='expired',pagesRead=0)
+    last=max([int(parse_qs(urlparse(u).query).get('page',['1'])[0]) for u in p.links if urlparse(u).path==urlparse(url).path]+[1])
+    if last>1000:raise ValueError('Excessive catalog length')
+    start_page=max(1,min(start_page,last));end=min(last,start_page+page_count-1)
+    def scan(n):
+        page_url=url if n==1 else url+'?page='+str(n)
+        page=p if n==1 else parse(read(page_url))
+        if not page.images:return [],False
+        rows=[]
+        for image_url in page.images[:1]:
+            raw=read(image_url,True);im=read_image(raw)
+            for card in extract_cards(im):
+                card.update(meta,imageUrl=image_url,sourceUrl=page_url,imageSha256=hashlib.sha256(raw).hexdigest(),identityConfirmed=False);rows.append(card)
+        return rows,True
+    with ThreadPoolExecutor(max_workers=2) as pool:results=list(pool.map(scan,range(start_page,end+1)))
+    cards=[c for rows,ok in results for c in rows];read_count=sum(ok for rows,ok in results)
+    return dict(cards=cards,nextPage=1 if end==last else end+1,complete=end==last,state='read' if cards else 'no_prices',pagesRead=read_count,pagesTotal=last)

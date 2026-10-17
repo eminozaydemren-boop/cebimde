@@ -58,8 +58,24 @@ jobs:
           # Only aggregate counters are public. No product URLs, titles, or owner keys.
           print(json.dumps({'processed':processed,'verified':verified,'notifications':notifications}))
           PY
-  brochures:
+  brochure_directory:
     if: github.repository == 'eminozaydemren-boop/cebimde' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Discover all merchants and current catalogs from public directory
+        run: |
+          python3 -m pip install --quiet requests
+          python3 -u scripts/discover_brochures.py
+  brochures:
+    needs: brochure_directory
+    if: github.repository == 'eminozaydemren-boop/cebimde' && github.event.repository.private == false
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        worker: [1, 2, 3, 4]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -69,7 +85,7 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-tur
           python3 -m pip install --quiet requests Pillow
-      - name: Read current public brochures and import dated campaign cards
+      - name: Read fair catalog batches and import dated campaign cards
         env:
           BROCHURE_OCR_LANGUAGE: tur+eng
           OMP_THREAD_LIMIT: '1'

@@ -37,6 +37,8 @@ from product_links import product_link, ProductLinkError
 app.register_blueprint(watch_api)
 from brochure_store import brochure_api
 app.register_blueprint(brochure_api)
+from brochure_queue import queue_api
+app.register_blueprint(queue_api)
 ALLOWED={'www.hepsiburada.com','hepsiburada.com','www.amazon.com.tr','amazon.com.tr','www.trendyol.com','trendyol.com','www.n11.com','n11.com'}
 HEADERS={'User-Agent':'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/154 Safari/537.36','Accept-Language':'tr-TR,tr;q=0.9,en;q=0.7'}
 
@@ -552,7 +554,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.84',watchMonitoring=1,brochureReading=1)
+def health():return jsonify(ok=True,service='cebimde',version='3.85',watchMonitoring=1,brochureReading=1,brochureDiscovery=1)
 
 @app.get('/api/debug/external')
 def debug_external():

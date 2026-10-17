@@ -14,6 +14,7 @@ def initialize(conn):
       imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )''')
     conn.execute('CREATE INDEX IF NOT EXISTS brochure_expiry_idx ON brochure_cards(expires_on)')
+    conn.execute("ALTER TABLE brochure_cards ADD COLUMN IF NOT EXISTS search_text TEXT NOT NULL DEFAULT ''")
 
 def valid_card(card,today=None):
     today=today or datetime.now(timezone.utc).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Istanbul')).date()
@@ -35,7 +36,11 @@ def match_card(base,card):
     # Match the printed heading, not stray text elsewhere on the page/another card.
     title=normalized_title(base.get('title'));other=normalized_title(card.get('title'))
     pack_a=variant_signature(title)[1];pack_b=variant_signature(other)[1]
-    if not pack_a or not pack_b or pack_a!=pack_b:return False
+    if pack_a or pack_b:
+        if not pack_a or not pack_b or pack_a!=pack_b:return False
+    else:
+        from product_data import same_product
+        return same_product(base,{'title':card.get('title')})
     a=set(re.findall(r'[a-z]{3,}',title));b=set(re.findall(r'[a-z]{3,}',other))
     a-= {'adet','rulo'};b-= {'adet','rulo'}
     brand=normalized_title(base.get('brand')) or (title.split()[0] if title else '')
@@ -55,12 +60,17 @@ def find_brochures(base):
     try:
         with db() as conn:
             initialize(conn)
-            rows=conn.execute("SELECT data,imported_at FROM brochure_cards WHERE expires_on >= (NOW() AT TIME ZONE 'Europe/Istanbul')::date AND imported_at >= NOW()-INTERVAL '24 hours' ORDER BY imported_at DESC LIMIT 5000").fetchall()
+            needle=(normalized_title(base.get('brand')) or normalized_title(base.get('title')).split(' ')[0])
+            rows=conn.execute("SELECT data,imported_at FROM brochure_cards WHERE expires_on >= (NOW() AT TIME ZONE 'Europe/Istanbul')::date AND imported_at >= NOW()-INTERVAL '24 hours' AND (search_text LIKE %s OR search_text='') ORDER BY imported_at DESC LIMIT 5000",('%'+needle+'%',)).fetchall()
         found=[]
         for card,at in rows:
             if valid_card(card) and match_card(base,card):
                 found.append(dict(card,readAt=at.isoformat(),identityConfirmed=False,priceKind='brochure',currency='TRY',conditions='Şube, tarih ve stok koşulları geçerlidir. Ürün varyantını broşür görselinden kontrol et.'))
-        return sorted(found,key=lambda x:x['price'])[:12]
+        unique={}
+        for c in found:
+            key=(c['imageUrl'],c['price'],variant_signature(c['title'])[1])
+            unique.setdefault(key,c)
+        return sorted(unique.values(),key=lambda x:x['price'])[:12]
     except Exception:return []
 
 @brochure_api.post('/import')
@@ -75,12 +85,16 @@ def import_cards():
     try:
         with db() as conn:
             initialize(conn)
-            for card in cards:
-                # Only retain documented public product/campaign fields.
-                item={k:card[k] for k in ('title','text','price','region','startDate','endDate','campaign','scope','merchant','sourceUrl','imageUrl','imageSha256')}
-                ident=hashlib.sha256((item['imageUrl']+str(item['region'])).encode()).hexdigest()
-                conn.execute('''INSERT INTO brochure_cards(id,data,expires_on) VALUES(%s,%s::jsonb,%s)
-                    ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data,expires_on=EXCLUDED.expires_on,imported_at=NOW()''',(ident,json.dumps(item),item['endDate']))
+            save_cards(conn,cards)
             conn.execute('DELETE FROM brochure_cards WHERE expires_on < CURRENT_DATE-7')
         return jsonify(ok=True,imported=len(cards))
     except Exception:return jsonify(ok=False,error='Brosur kaydedilemedi'),503
+
+
+def save_cards(conn,cards):
+    for card in cards:
+        # Only retain documented public product/campaign fields.
+        item={k:card[k] for k in ('title','text','price','region','startDate','endDate','campaign','scope','merchant','sourceUrl','imageUrl','imageSha256')}
+        ident=hashlib.sha256((item['imageUrl']+str(item['region'])).encode()).hexdigest()
+        conn.execute('''INSERT INTO brochure_cards(id,data,expires_on,search_text) VALUES(%s,%s::jsonb,%s,%s)
+            ON CONFLICT(id) DO UPDATE SET data=EXCLUDED.data,expires_on=EXCLUDED.expires_on,imported_at=NOW(),search_text=EXCLUDED.search_text''',(ident,json.dumps(item),item['endDate'],normalized_title(item['title'])))

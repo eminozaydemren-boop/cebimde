@@ -276,3 +276,26 @@ function mountBrochureOffers(product){
  }
  section.appendChild(cards);q('#resultBody').appendChild(section);
 }
+
+
+async function loadCoverage(){
+ try{
+  const response=await fetch('/api/brochures/coverage',{signal:AbortSignal.timeout(15000)});
+  const data=await response.json();if(!data.ok)return;
+  let host=document.getElementById('brochureCoverage');
+  if(!host){host=document.createElement('details');host.id='brochureCoverage';q('#url').closest('section').appendChild(host);}
+  host.replaceChildren();
+  const summary=document.createElement('summary');summary.textContent='Broşür taraması: '+data.discoveredMerchants+' mağaza dizinde · '+data.attemptedMerchants+' mağazada tarama denendi · '+data.pricedMerchants+' mağazadan fiyat okundu';host.appendChild(summary);
+  const note=document.createElement('p');note.textContent='Mağazalar kaynak dizininden otomatik keşfedilir ve sırayla taranır. Çevrimiçi ürün araması mağaza listesiyle sınırlı değildir. Her mağaza veya her ürün için fiyat bulunacağı garanti edilmez.';host.appendChild(note);
+  const list=document.createElement('ul');
+  for(const merchant of data.merchants){
+   const row=document.createElement('li');
+   const state=merchant.discoveryState==='unavailable'?'Dizine erişilemedi':!merchant.catalogs?'Güncel broşür bulunamadı':merchant.indexedCards?merchant.indexedCards+' ürün kartı kayıtlı':merchant.unavailable?'Broşüre erişilemedi':merchant.pagesRead?'Sayfa okundu; fiyat doğrulanamadı':merchant.lastAttempt?'Tarama sürüyor':'Tarama sırasında';
+   row.textContent=merchant.name+' · '+state;list.appendChild(row);
+  }
+  host.appendChild(list);
+ }catch(e){console.info('Broşür kapsamı şu anda alınamadı.');}
+}
+loadCoverage();
+
+setInterval(()=>{if(document.visibilityState==='visible')loadCoverage();},60000);

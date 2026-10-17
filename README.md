@@ -68,3 +68,24 @@ Expired, future, and more-than-24-hour-stale imported cards are excluded. Stock 
 national availability are not asserted. The first supported brochure provider is
 Katalog24 and the first automatically scanned retailer is Anpa Gross; online seller
 discovery remains open to public sellers. This does not guarantee exhaustive coverage.
+
+
+### V3.85: directory-wide discovery and resumable scanning
+
+The fixed Anpa retailer input is replaced with every merchant listed by the provider's
+public directory. Merchant pages reveal their actual catalog index links. Current
+catalogs are queued in PostgreSQL; four standard public Ubuntu workers claim leased
+three-page batches with `FOR UPDATE SKIP LOCKED`. Least-recently-attempted catalogs
+run first. Large catalogs resume instead of being discarded at 32 pages. Each worker
+has an 18-minute budget, with unprocessed pages retained for the next six-hour run.
+Completed catalogs become due again after six hours; failed leases expire after ten
+minutes. OIDC authentication remains tied to the same public main-branch workflow.
+No paid runners, caches, artifacts, or paid price services are added.
+
+A public coverage endpoint distinguishes merchants discovered, attempts, active
+catalogs, indexed prices, and unavailable sources. The existing UI includes an
+expandable coverage list. Directory membership never asserts that every product or
+price was read. OCR supports more caption placements and red/yellow label geometry;
+unreadable prices remain absent. Brochure identity stays unconfirmed and excluded
+from online minima, savings, and notifications. Public-seller web discovery remains
+independent of brochure directory membership. Coverage is not exhaustive worldwide.
