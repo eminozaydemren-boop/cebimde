@@ -169,3 +169,21 @@ def test_similar_consumer_names_do_not_override_gtin_or_pack_conflicts():
     a={'title':'Familia Natural Tuvalet Kagidi 40 li','gtin':'123'}
     assert not plausible_product(a,{'title':'Familia Plus Natural Tuvalet Kagidi 40 li','brand':'Familia','gtin':'456'})
     assert not plausible_product(a,{'title':'Familia Plus Natural Tuvalet Kagidi 32 li','brand':'Familia'})
+
+
+def test_selected_marketplace_candidate_uses_only_public_analysis(monkeypatch):
+    analyze=Mock(return_value={'title':'Selected Product','price':100,'offers':[]})
+    monkeypatch.setattr(generic,'analyze_any_seller',analyze)
+    import app as application
+    paid=Mock(side_effect=AssertionError('Paid marketplace adapter must not run'))
+    monkeypatch.setattr(application,'reef_hepsiburada',paid)
+    r=app.test_client().get('/api/product',query_string={'url':'https://www.hepsiburada.com/product-p-HBCV000TEST','mode':'public'})
+    assert r.status_code==200 and r.json['product']['title']=='Selected Product'
+    analyze.assert_called_once();paid.assert_not_called()
+
+
+def test_same_consumer_title_words_match_despite_word_order():
+    a={'title':"Familia Plus Natural 40'lı Tuvalet Kağıdı",'brand':'Familia'}
+    assert same_product(a,{'title':"Famılıa Plus Natural Tuvalet Kağıdı 40'Lı",'brand':'FAMILIA'})
+    assert not same_product(a,{'title':"Familia Natural Tuvalet Kağıdı 40'Lı",'brand':'Familia'})
+    assert not same_product(a,{'title':"Familia Plus Natural Tuvalet Kağıdı 32'Lı",'brand':'Familia'})

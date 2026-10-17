@@ -1,4 +1,4 @@
-# CEBİMDE V3.81
+# CEBİMDE V3.82
 
 Price comparison and persistent target-price watches. Existing comparison providers and page styles are preserved.
 
@@ -40,6 +40,8 @@ Each generic analysis makes up to two free SearXNG queries, then checks up to si
 
 Public reads validate every redirect and DNS result, pin connections to a validated public IP, verify TLS against the original hostname, and bound response size and read time. Private networks and credentials in URLs are rejected. Blocked retailers, missing structured data and unindexed products can still yield no verified offers. Acceptance of a seller URL does not promise exhaustive coverage of all sellers.
 
-V3.81 reads a complete priced Product schema in the HTML head without waiting for large menus below it. Pack suffixes such as 40li and 100lu are excluded from model codes; consumer products get an unquoted name query. The optional product input has responsive form styling, and release URLs invalidate cached frontend assets.
+V3.82 reads a complete priced Product schema in the HTML head without waiting for large menus below it. Pack suffixes such as 40li and 100lu are excluded from model codes; consumer products get an unquoted name query. The optional product input has responsive form styling, and release URLs invalidate cached frontend assets.
 
 When the original merchant denies server reads, the product identity can remain unconfirmed. Plausible consumer offers require the input brand in their verified product metadata, all descriptive input anchors and matching pack quantities. They are shown separately as unconfirmed candidates, never as verified comparisons, savings, signed snapshots or automatic watch prices. Structured brand arrays and HTML-encoded names are parsed. Public input read diagnostics contain only stage, status, byte count and error class.
+
+V3.82 lets the user continue with an unconfirmed candidate as a new input product. The selected page is fetched again through `mode=public` and must independently supply identity and a valid price before comparison or watch saving. The former blocked input is not reclassified as verified. This route never enters paid marketplace adapters, even when a candidate is on one of the original four marketplaces. Exact descriptive title token multisets may match despite word order changes; all identifier, brand and pack conflict checks still apply.

@@ -23,3 +23,10 @@ test('unavailable free search stops after four total attempts',async()=>{
  const r=runner([{ok:true,product:{searchMode:'open_web',search:{status:'unavailable'}}}]);
  await r.request('https://seller.com/product','',()=>{});assert.equal(r.calls(),4);
 });
+
+test('selected candidates explicitly request the public route',async()=>{
+ let requested;
+ const request=vm.runInNewContext(prefix+';requestProduct',{URL,fetch:async url=>{requested=url;return {json:async()=>({ok:true,product:{price:100}})}},setTimeout:resolve=>resolve()});
+ await request('https://www.hepsiburada.com/product-p-HBCV000TEST','',()=>{},true);
+ assert.equal(new URL(requested,'https://cebimde.onrender.com').searchParams.get('mode'),'public');
+});

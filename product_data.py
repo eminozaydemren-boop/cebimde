@@ -69,7 +69,7 @@ def same_product(base,candidate):
     def pack_title(title):
         return re.sub(r'\b(\d+)\s*(?:li|lu|rulo|adet)\b',r'\1 adet',normalized_title(title))
     a=pack_title(base.get('title'));b=pack_title(candidate.get('title'))
-    return bool(a==b and len(a)>=16 and len(a.split())>=3)
+    return bool(sorted(a.split())==sorted(b.split()) and len(a)>=16 and len(a.split())>=3)
 
 
 def plausible_product(base,candidate):
