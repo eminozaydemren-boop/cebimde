@@ -100,7 +100,7 @@ records are cleaned during directory refresh.
 
 ### V3.86: shared product search recovery
 
-The shared generic search read deadline is 35 seconds (3-second connection
+The shared generic search read deadline is 30 seconds (10-second connection
 deadline), allowing a free search instance to wake instead of discarding its
 response after 7 seconds. Search result articles exclude footer/help links;
 HTTP-200 error pages are no longer counted as completed searches. Definite

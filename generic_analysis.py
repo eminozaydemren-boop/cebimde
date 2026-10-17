@@ -91,16 +91,17 @@ def discover(base):
         try:
             # Free Render instances can need tens of seconds to wake. A seven-second
             # deadline discarded successful searches, independently of product/store.
-            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.86','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=(3,35))
+            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.86','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=(10,30))
             found=search_links(r.text,endpoint) if r.ok else []
             empty=bool(re.search(r'id=["\']no_results["\']|No results were found',r.text,re.I))
             # HTTP 200 error/challenge pages are not successful searches.
-            return (bool(r.ok and (found or empty)),found)
-        except requests.RequestException:return (False,[])
-    urls=[];success=False;brochures=[]
+            return (bool(r.ok and (found or empty)),found,{'httpStatus':r.status_code,'links':len(found),'state':'results' if found else 'empty' if empty else 'invalid_response'})
+        except requests.RequestException as error:return (False,[],{'state':type(error).__name__})
+    urls=[];success=False;brochures=[];attempts=[]
     blocked=('google.com','bing.com','duckduckgo.com','youtube.com','facebook.com','instagram.com','pinterest.com','tiktok.com','akakce.com','cimri.com','epey.com','x.com','twitter.com','web.archive.org')
     with ThreadPoolExecutor(max_workers=3) as pool:
-        for index,(ok,found) in enumerate(pool.map(search,queries)):
+        for index,(ok,found,diagnostic) in enumerate(pool.map(search,queries)):
+            attempts.append(dict(diagnostic,kind='price' if index<price_query_count else 'brochure'))
             if index<price_query_count:success=success or ok
             for url in found:
                 try:
@@ -131,7 +132,7 @@ def discover(base):
         else:hosts.add(host);distinct.append(url)
     selected=(distinct+duplicates)[:12]
     base['_brochures']=sorted(brochures,key=lambda item:0 if item['kind']=='brochure' else 1)[:4]
-    base['_search']={'status':'completed' if success else 'unavailable','candidates':len(selected)}
+    base['_search']={'status':'completed' if success else 'unavailable','candidates':len(selected),'attempts':attempts}
     return selected
 
 
