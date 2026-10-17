@@ -136,8 +136,9 @@ def price_from_label(image,box):
 
 def read_image(raw):
     from PIL import Image
-    im=Image.open(io.BytesIO(raw));im.load()
+    im=Image.open(io.BytesIO(raw))
     if im.width*im.height>16_000_000:raise ValueError('Image too large')
+    im.load()
     return im.convert('RGB')
 
 def extract_cards(image):
