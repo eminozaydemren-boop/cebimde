@@ -83,8 +83,8 @@ def test_distinct_merchants_get_slots_before_repeated_same_shop_pages(monkeypatc
     base={'title':'Brand ABC123','url':URL,'brand':'Brand','mpn':'ABC123'}
     result=generic.discover(base)
     from urllib.parse import urlparse
-    assert len(result)==6 and len({urlparse(u).hostname for u in result})==6
-    assert base['_search']['candidates']==6
+    assert len(result)==12 and len({urlparse(u).hostname for u in result[:6]})==6
+    assert base['_search']['candidates']==12
 
 
 def test_user_name_overrides_unstructured_error_page_title(monkeypatch):
@@ -213,3 +213,47 @@ def test_successful_brochure_search_does_not_hide_failed_price_search(monkeypatc
     base={'title':'Familia Natural Tuvalet Kagidi 40 li','url':URL}
     assert generic.discover(base)==[]
     assert base['_search']['status']=='unavailable' and base['_brochures']
+
+
+def test_search_waits_for_free_instance_instead_of_discarding_after_seven_seconds(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    get=Mock(return_value=Mock(ok=True,text='<article class="result result-default"><a href="https://independent-shop.com/ABC123">Product</a></article>'))
+    monkeypatch.setattr(generic.requests,'get',get)
+    base={'title':'Brand ABC123','url':URL}
+    assert generic.discover(base)==['https://independent-shop.com/ABC123']
+    assert all(call.kwargs['timeout']==(3,35) for call in get.call_args_list)
+
+
+def test_result_articles_exclude_footer_error_and_navigation_links():
+    body='''<html><a href="https://github.com/searxng/searxng">Code</a>
+    <article class="result result-default"><a href="https://retailer.com/item">Item</a></article>
+    <a href="https://another-service.com/help">Help</a></html>'''
+    assert generic.search_links(body,'https://search-service.com')==['https://retailer.com/item']
+
+
+def test_http_200_error_page_is_not_a_completed_search(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    monkeypatch.setattr(generic.requests,'get',Mock(return_value=Mock(ok=True,text='<html><p>Search temporarily unavailable</p><a href="https://github.com/searxng/searxng">Help</a></html>')))
+    base={'title':'Brand ABC123','url':URL}
+    assert generic.discover(base)==[]
+    assert base['_search']['status']=='unavailable'
+
+
+def test_known_listings_do_not_consume_product_verification_slots(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    links=['https://www.trendyol.com/papia-32-li-tuvalet-kagidi-y-s51087',
+           'https://www.amazon.com.tr/s?k=papia','https://retailer.com/kategoriler/kagit',
+           'https://new-seller.com/brand-widget-100ml']
+    body='<html>'+''.join('<article class="result"><a href="'+u+'">Result</a></article>' for u in links)+'</html>'
+    monkeypatch.setattr(generic.requests,'get',Mock(return_value=Mock(ok=True,text=body)))
+    assert generic.discover({'title':'Brand Widget 100ml','url':URL})==[links[-1]]
+
+
+@pytest.mark.parametrize('title',["Papia Tuvalet Kağıdı 32'li",'Sonoff ZBMINI L2','Faber Castell Grip 0.7 mm','Example Şampuan 500 ml'])
+def test_any_product_type_can_be_discovered_without_a_merchant_whitelist(monkeypatch,title):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    get=Mock(return_value=Mock(ok=True,text='<article class="result"><a href="https://previously-unknown-shop.com/product">Item</a></article>'))
+    monkeypatch.setattr(generic.requests,'get',get)
+    base={'title':title,'url':URL}
+    assert generic.discover(base)==['https://previously-unknown-shop.com/product']
+    assert base['_search']['status']=='completed'

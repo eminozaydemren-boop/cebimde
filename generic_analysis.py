@@ -7,8 +7,39 @@ import requests
 from public_web import normalize_url,fetch_page
 from product_data import structured_product,same_product,plausible_product
 from price_monitor import verified_offer
+from product_links import product_link
 
 class ProductInfoRequired(ValueError):pass
+
+class SearchResults(HTMLParser):
+    """Read result articles, excluding engine errors, navigation and footer links."""
+    def __init__(self):
+        super().__init__(convert_charrefs=True);self.depth=0;self.links=[];self.articles=False
+    def handle_starttag(self,tag,attrs):
+        a=dict(attrs)
+        if tag=='article' and 'result' in a.get('class','').split():
+            self.depth+=1;self.articles=True
+        if self.depth and tag=='a' and a.get('href'):self.links.append(a['href'])
+    def handle_endtag(self,tag):
+        if tag=='article' and self.depth:self.depth-=1
+
+def search_links(body,endpoint):
+    from app import searx_result_urls
+    parser=SearchResults();parser.feed(body)
+    # Older SearXNG themes can return fragments without an article wrapper.
+    if not parser.articles:
+        if '<html' in body.casefold():return []
+        return searx_result_urls(body,endpoint)
+    return searx_result_urls(''.join('<a href="'+html.escape(u,quote=True)+'"></a>' for u in parser.links),endpoint)
+
+def candidate_link(url):
+    """Skip definite listings before spending a limited verification slot."""
+    url=product_link(url)
+    path=unquote(urlparse(url).path).casefold()
+    if re.search(r'/(?:search|arama|kategori(?:ler)?|categor(?:y|ies)|collections?|s)(?:/|$)',path):
+        raise ValueError('listing')
+    if re.search(r'-k-[a-z0-9]+/?$',path):raise ValueError('listing')
+    return url
 
 class PageMeta(HTMLParser):
     def __init__(self):
@@ -42,7 +73,7 @@ def url_title(url):
 
 
 def discover(base):
-    from app import model_token,searx_result_urls
+    from app import model_token
     endpoint=os.getenv('SEARXNG_URL','').strip().rstrip('/')
     if not endpoint:
         base['_search']={'status':'not_configured','candidates':0};return []
@@ -58,8 +89,13 @@ def discover(base):
     queries.append(title[:160]+' broşür aktüel katalog')
     def search(query):
         try:
-            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.78','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=7)
-            return (r.ok,searx_result_urls(r.text,endpoint) if r.ok else [])
+            # Free Render instances can need tens of seconds to wake. A seven-second
+            # deadline discarded successful searches, independently of product/store.
+            r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.86','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=(3,35))
+            found=search_links(r.text,endpoint) if r.ok else []
+            empty=bool(re.search(r'id=["\']no_results["\']|No results were found',r.text,re.I))
+            # HTTP 200 error/challenge pages are not successful searches.
+            return (bool(r.ok and (found or empty)),found)
         except requests.RequestException:return (False,[])
     urls=[];success=False;brochures=[]
     blocked=('google.com','bing.com','duckduckgo.com','youtube.com','facebook.com','instagram.com','pinterest.com','tiktok.com','akakce.com','cimri.com','epey.com','x.com','twitter.com','web.archive.org')
@@ -78,6 +114,7 @@ def discover(base):
                         if url not in [item['url'] for item in brochures]:brochures.append({'url':url,'source':host.removeprefix('www.'),'kind':'brochure' if brochure else 'comparison','identityConfirmed':False})
                     if comparison or brochure:continue
                     if index>=price_query_count:continue
+                    url=candidate_link(url)
                     if url!=base['url'] and url not in urls:urls.append(url)
                 except ValueError:continue
     # Rank by product identifiers in the URL, never by a fixed retailer list.
@@ -92,7 +129,7 @@ def discover(base):
         host=urlparse(url).hostname.removeprefix('www.')
         if host in hosts:duplicates.append(url)
         else:hosts.add(host);distinct.append(url)
-    selected=(distinct+duplicates)[:6]
+    selected=(distinct+duplicates)[:12]
     base['_brochures']=sorted(brochures,key=lambda item:0 if item['kind']=='brochure' else 1)[:4]
     base['_search']={'status':'completed' if success else 'unavailable','candidates':len(selected)}
     return selected
@@ -113,8 +150,9 @@ def compare(base):
                     return {'source':urlparse(page[1]).hostname.removeprefix('www.'),'url':page[1],'title':candidate['title'],'price':candidate['price'],'identityConfirmed':False}
         except Exception:pass
         return None
-    # Six pages in parallel; discovery results alone never become prices.
-    with ThreadPoolExecutor(max_workers=6) as pool:out=list(pool.map(verify,urls[:6]))
+    # Check two batches with six concurrent reads. Listings and repeated merchants
+    # no longer consume the entire first batch. Search text never becomes a price.
+    with ThreadPoolExecutor(max_workers=6) as pool:out=list(pool.map(verify,urls[:12]))
     base['_similar']=[x for x in out if x and x.get('identityConfirmed') is False]
     return [x for x in out if x and x.get('identityConfirmed') is not False]
 

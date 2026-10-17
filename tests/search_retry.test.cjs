@@ -31,6 +31,16 @@ test('selected candidates explicitly request the public route',async()=>{
  assert.equal(new URL(requested,'https://cebimde.onrender.com').searchParams.get('mode'),'public');
 });
 
+test('every initial merchant link requests free public analysis',async()=>{
+ let requested=[];
+ const request=vm.runInNewContext(prefix+';requestProduct',{URL,fetch:async url=>{requested.push(url);return {json:async()=>({ok:true,product:{price:100}})}},setTimeout:resolve=>resolve()});
+ for(const url of ['https://www.trendyol.com/product-p-123','https://www.avansas.com/example-product','https://new-shop.com/example-product']){
+  await request(url,'',()=>{});
+ }
+ assert.equal(requested.length,3);
+ assert.ok(requested.every(url=>new URL(url,'https://cebimde.onrender.com').searchParams.get('mode')==='public'));
+});
+
 test('available brochure results render immediately when web search is waking',async()=>{
  const result={ok:true,product:{brochureOffers:[{price:239}],searchMode:'open_web',search:{status:'unavailable'}}};
  const r=runner([result]);

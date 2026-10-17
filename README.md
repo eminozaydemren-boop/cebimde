@@ -36,7 +36,7 @@ Product input validation rejects campaign/category/search pages before any price
 
 Any public seller product URL can enter analysis, watch storage and free rechecks. Known marketplace campaign and listing URLs are rejected early. Other input pages are read for structured Product identity, GTIN, brand, model and title; missing identity falls back to page metadata, URL words or an optional user-provided name/barcode. An unverified title is not a verified price.
 
-Each generic analysis makes up to two free SearXNG price queries and one separate brochure-discovery query, then checks up to six candidate pages concurrently, giving distinct merchants priority before repeated pages from the same merchant. Only fresh structured TRY offers with matching identity and no conflicting pack, capacity or color are shown. Search snippets are never treated as prices. The existing four-marketplace comparison adapters remain in place; the generic flow and monitoring invoke no paid adapters. Styles are preserved. When the free search service is unavailable, the client retries generic analysis up to three times, 12 seconds apart; existing marketplace adapters are never retried by this path.
+Each generic analysis makes up to two free SearXNG price queries and one separate brochure-discovery query, then checks up to twelve candidate pages with six concurrent reads, giving distinct merchants priority before repeated pages from the same merchant. Only fresh structured TRY offers with matching identity and no conflicting pack, capacity or color are shown. Search snippets are never treated as prices. The existing four-marketplace comparison adapters remain in place; the generic flow and monitoring invoke no paid adapters. Styles are preserved. When the free search service is unavailable, the client retries generic analysis up to three times, 12 seconds apart; existing marketplace adapters are never retried by this path.
 
 Public reads validate every redirect and DNS result, pin connections to a validated public IP, verify TLS against the original hostname, and bound response size and read time. Private networks and credentials in URLs are rejected. Blocked retailers, missing structured data and unindexed products can still yield no verified offers. Acceptance of a seller URL does not promise exhaustive coverage of all sellers.
 
@@ -96,3 +96,21 @@ type/title, and an explicit TRY price amount; unknown currency, stock rejection,
 ranges, percentages and other-page metadata cannot become prices. Updated brochure
 image hashes invalidate older prices from that image URL; expired cached brochure
 records are cleaned during directory refresh.
+
+
+### V3.86: shared product search recovery
+
+The shared generic search read deadline is 35 seconds (3-second connection
+deadline), allowing a free search instance to wake instead of discarding its
+response after 7 seconds. Search result articles exclude footer/help links;
+HTTP-200 error pages are no longer counted as completed searches. Definite
+marketplace listings are removed before selecting up to twelve candidate product
+pages, with distinct merchants first. Prices still require a fresh merchant
+Product/Offer or explicit product metadata and a matching product identity.
+
+All initial links and candidate selections in the web UI now explicitly use
+`mode=public`, regardless of merchant. The existing marketplace adapters remain
+in the backend, but this UI flow does not invoke paid services. There is no
+product-specific URL or price table. Inaccessible shops and missing product
+identity can still prevent a verified offer; universal store coverage is not
+guaranteed.

@@ -554,7 +554,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.85',watchMonitoring=1,brochureReading=1,brochureDiscovery=1)
+def health():return jsonify(ok=True,service='cebimde',version='3.86',watchMonitoring=1,brochureReading=1,brochureDiscovery=1)
 
 @app.get('/api/debug/external')
 def debug_external():
