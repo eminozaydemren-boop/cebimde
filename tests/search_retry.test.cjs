@@ -30,3 +30,10 @@ test('selected candidates explicitly request the public route',async()=>{
  await request('https://www.hepsiburada.com/product-p-HBCV000TEST','',()=>{},true);
  assert.equal(new URL(requested,'https://cebimde.onrender.com').searchParams.get('mode'),'public');
 });
+
+test('available brochure results render immediately when web search is waking',async()=>{
+ const result={ok:true,product:{brochureOffers:[{price:239}],searchMode:'open_web',search:{status:'unavailable'}}};
+ const r=runner([result]);
+ const returned=await r.request('https://seller.com/product','',()=>{throw Error('Should render available brochure result');});
+ assert.equal(r.calls(),1);assert.equal(returned.product.brochureOffers[0].price,239);
+});

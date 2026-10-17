@@ -28,7 +28,7 @@ async function requestProduct(raw,hint,report,publicOnly=false){
  const url='/api/product?url='+encodeURIComponent(raw)+'&name='+encodeURIComponent(hint)+(publicOnly?'&mode=public':'');
  for(let attempt=0;attempt<4;attempt++){
   const response=await fetch(url),data=await response.json();
-  if(!data.ok||data.product?.searchMode!=='open_web'||data.product?.search?.status!=='unavailable'||attempt===3)return data;
+  if(!data.ok||data.product?.brochureOffers?.length||data.product?.searchMode!=='open_web'||data.product?.search?.status!=='unavailable'||attempt===3)return data;
   report('Ürün aranıyor. Ücretsiz arama servisi açılıyor; otomatik yeniden deneniyor…');
   await new Promise(resolve=>setTimeout(resolve,12000));
  }
