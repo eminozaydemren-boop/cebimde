@@ -60,19 +60,21 @@ def fetch_page(value,budget=8,diagnostics=None):
             content_type=response.headers.get('Content-Type','')
             if not any(kind in content_type.lower() for kind in ('text/html','application/xhtml+xml')):return None
             diagnostics['stage']='body'
-            data=bytearray()
+            data=bytearray();head_checked=False
             for chunk in response.stream(16384,decode_content=True):
                 data.extend(chunk)
                 diagnostics['bytes']=len(data)
                 if len(data)>4*1024*1024 or time.monotonic()>=deadline:return None
                 # Large storefront menus need not download after the main head offer is complete.
-                head_end=data.lower().find(b'</head>')
-                if head_end>=0 and b'application/ld+json' in data[:head_end].lower():
-                    from product_data import structured_product
-                    head=bytes(data[:head_end+7]).decode('utf-8',errors='replace')
-                    product=structured_product(head,url)
-                    if product and product.get('price') is not None:
-                        diagnostics['stage']='product_head';return head,url
+                head_end=data.lower().find(b'</head>') if not head_checked else -1
+                if head_end>=0:
+                    head_checked=True
+                    if b'application/ld+json' in data[:head_end].lower():
+                        from product_data import structured_product
+                        head=bytes(data[:head_end+7]).decode('utf-8',errors='replace')
+                        product=structured_product(head,url)
+                        if product and product.get('price') is not None:
+                            diagnostics['stage']='product_head';return head,url
             charset=re.search(r'charset=([\w-]+)',content_type,re.I)
             try:body=data.decode(charset.group(1) if charset else 'utf-8',errors='replace')
             except LookupError:body=data.decode('utf-8',errors='replace')
