@@ -239,6 +239,16 @@ def test_http_200_error_page_is_not_a_completed_search(monkeypatch):
     assert base['_search']['status']=='unavailable'
 
 
+def test_upstream_errors_are_not_reported_as_no_matching_product(monkeypatch):
+    monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
+    body='<html><td class="response-error">Suspended: too many requests</td><p>No results were found</p></html>'
+    monkeypatch.setattr(generic.requests,'get',Mock(return_value=Mock(ok=True,status_code=200,text=body)))
+    base={'title':'Brand ABC123','url':URL}
+    assert generic.discover(base)==[]
+    assert base['_search']['status']=='unavailable'
+    assert all(a['state']=='upstream_unavailable' for a in base['_search']['attempts'])
+
+
 def test_known_listings_do_not_consume_product_verification_slots(monkeypatch):
     monkeypatch.setenv('SEARXNG_URL','https://search-service.com')
     links=['https://www.trendyol.com/papia-32-li-tuvalet-kagidi-y-s51087',

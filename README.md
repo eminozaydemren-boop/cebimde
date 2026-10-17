@@ -114,3 +114,11 @@ in the backend, but this UI flow does not invoke paid services. There is no
 product-specific URL or price table. Inaccessible shops and missing product
 identity can still prevent a verified offer; universal store coverage is not
 guaranteed.
+
+V3.86.2 distinguishes upstream search-engine failures from a valid empty search.
+The response includes only HTTP status, result count and failure class, never
+endpoint configuration or credentials. When every price query reports upstream
+failure, the client stops automatic identical retries and identifies a search
+source failure rather than asking the user to rename the product. Live tests
+found intermittent verified offers but also upstream rate limits/access denials;
+this release does not establish reliable universal product discovery.

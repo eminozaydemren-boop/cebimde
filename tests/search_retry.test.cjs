@@ -24,6 +24,13 @@ test('unavailable free search stops after four total attempts',async()=>{
  await r.request('https://seller.com/product','',()=>{});assert.equal(r.calls(),4);
 });
 
+test('upstream access failures do not trigger repeated identical searches',async()=>{
+ const data={ok:true,product:{searchMode:'open_web',search:{status:'unavailable',attempts:[{kind:'price',state:'upstream_unavailable'}]}}};
+ const r=runner([data]);
+ await r.request('https://seller.com/product','',()=>{throw Error('Do not retry upstream block');});
+ assert.equal(r.calls(),1);
+});
+
 test('selected candidates explicitly request the public route',async()=>{
  let requested;
  const request=vm.runInNewContext(prefix+';requestProduct',{URL,fetch:async url=>{requested=url;return {json:async()=>({ok:true,product:{price:100}})}},setTimeout:resolve=>resolve()});

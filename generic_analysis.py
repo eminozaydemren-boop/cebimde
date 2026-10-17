@@ -94,8 +94,9 @@ def discover(base):
             r=requests.get(endpoint+'/search',params={'q':query,'language':'tr-TR','categories':'general','pageno':1},headers={'User-Agent':'Mozilla/5.0 CEBIMDE/3.86','Accept':'text/html','Accept-Language':'tr-TR,tr;q=0.9'},timeout=(10,30))
             found=search_links(r.text,endpoint) if r.ok else []
             empty=bool(re.search(r'id=["\']no_results["\']|No results were found',r.text,re.I))
+            upstream_failed=bool(re.search(r'class=["\']response-error["\']',r.text,re.I)) and not found
             # HTTP 200 error/challenge pages are not successful searches.
-            return (bool(r.ok and (found or empty)),found,{'httpStatus':r.status_code,'links':len(found),'state':'results' if found else 'empty' if empty else 'invalid_response'})
+            return (bool(r.ok and (found or (empty and not upstream_failed))),found,{'httpStatus':r.status_code,'links':len(found),'state':'results' if found else 'upstream_unavailable' if upstream_failed else 'empty' if empty else 'invalid_response'})
         except requests.RequestException as error:return (False,[],{'state':type(error).__name__})
     urls=[];success=False;brochures=[];attempts=[]
     blocked=('google.com','bing.com','duckduckgo.com','youtube.com','facebook.com','instagram.com','pinterest.com','tiktok.com','akakce.com','cimri.com','epey.com','x.com','twitter.com','web.archive.org')
