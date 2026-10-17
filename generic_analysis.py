@@ -9,6 +9,7 @@ from product_data import structured_product,same_product,plausible_product
 from price_monitor import verified_offer
 from product_links import product_link
 from catalog_discovery import discover_catalogs
+from search_api import discover_api
 
 class ProductInfoRequired(ValueError):pass
 
@@ -140,6 +141,19 @@ def discover_web(base):
 
 def discover(base):
     """Catalog discovery works independently of the web search service."""
+    api=discover_api(base)
+    if api['urls']:
+        urls=[];duplicates=[];hosts=set()
+        for value in api['urls']:
+            try:url=candidate_link(value)
+            except ValueError:continue
+            host=urlparse(url).hostname.removeprefix('www.')
+            if host in hosts:duplicates.append(url)
+            else:hosts.add(host);urls.append(url)
+        selected=(urls+duplicates)[:12]
+        if selected:
+            base['_search']={'status':'completed','provider':'tavily_free','candidates':len(selected),'attempts':[]}
+            return selected
     catalog=discover_catalogs(base)
     base['_catalogQuotes']=catalog.get('quotes',[])
     if catalog.get('identity') and base.get('_inputStructured') is False:
@@ -160,6 +174,7 @@ def discover(base):
         base['_search']={'status':'completed','provider':'public_catalogs','candidates':len(urls),'attempts':[]}
         base['_brochures']=catalog['sources'][:4]
     base['_search']['catalogs']=catalog['diagnostics']
+    base['_search']['officialApi']=api['state']
     # Keep merchant diversity across catalog sources and remove tracking duplicates.
     distinct=[];duplicates=[];hosts=set();paths=set()
     for url in urls:

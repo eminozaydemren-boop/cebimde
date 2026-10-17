@@ -146,3 +146,25 @@ affect minimum verified price, savings, watch receipts or target notifications.
 Only fresh matching merchant reads can enter those calculations. This extends
 discovery to the merchants in the catalogs; it cannot guarantee all products or
 every shop on the internet.
+
+
+### V3.88: official search API, free-only guard
+
+The optional Tavily adapter is prepared but requires the owner's API key.
+Create or use a Tavily Researcher account without a payment card or paid plan;
+keep pay-as-you-go disabled. Add the key privately to the Render web service
+as `TAVILY_API_KEY`; never commit it, paste it in chat or put it in frontend code.
+`/health` reports only whether the key is configured, never its value.
+
+Before every basic search, the adapter calls the official usage endpoint. It
+refuses to search unless the account reports Researcher, a plan limit at most
+1,000, at least six credits remaining, zero paygo_limit and zero paygo_usage.
+Missing or ambiguous billing fields fail closed. Paid plans, exhausted credits
+and enabled overage are rejected. No advanced search, automatic depth upgrade
+or paid extraction is requested. No key is configured by this code change.
+
+Live Render tests of V3.87 returned HTTP 403 from both public catalogs; local
+research succeeding does not establish production access. Catalog discovery is
+an optional fallback, not a demonstrated fix for the production search outage.
+An authenticated free API account must be connected and live-tested before
+claiming the general product search problem is resolved.
