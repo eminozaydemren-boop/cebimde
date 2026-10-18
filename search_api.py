@@ -67,11 +67,12 @@ def _discover_api(base,key):
         _state.clear();_state.update(scope=scope,reserved=0,checked_at=0,blocked_until=0)
         _url_cache.clear()
     query=str(base.get('gtin') or base.get('mpn') or base.get('title') or '')[:180]+' fiyat satın al Türkiye'
-    if query in _url_cache:
-        stamp,urls=_url_cache[query]
+    cache_key=(query,bool(base.get('_merchantSearch')))
+    if cache_key in _url_cache:
+        stamp,urls=_url_cache[cache_key]
         if now-stamp<URL_TTL:
             return {'urls':[u for u in urls if u!=base.get('url')],'state':'completed'}
-        del _url_cache[query]
+        del _url_cache[cache_key]
     if now<_state.get('blocked_until',0):
         return {'urls':[],'state':'rate_limited','retryAfterSeconds':math.ceil(_state['blocked_until']-now)}
     headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'}
@@ -103,10 +104,15 @@ def _discover_api(base,key):
             print('[SEARCH_FREE_PLAN_REJECTED]',json.dumps(diagnostic),flush=True)
             return {'urls':[],'state':'free_plan_not_verified'}
         _state['reserved']+=1
-        response=requests.post('https://api.tavily.com/search',headers=headers,json={
+        payload={
             'query':query,'search_depth':'basic','auto_parameters':False,'topic':'general',
             'country':'turkey','language':'tr','max_results':20,'include_answer':False,
-            'include_raw_content':False,'include_images':False,'include_usage':True},
+            'include_raw_content':False,'include_images':False,'include_usage':True,
+            'exclude_domains':['google.com','youtube.com','facebook.com','instagram.com','akakce.com','cimri.com','epey.com']}
+        if base.get('_merchantSearch'):
+            from product_links import PATTERNS
+            payload['include_domains']=list(PATTERNS)
+        response=requests.post('https://api.tavily.com/search',headers=headers,json=payload,
             timeout=(3,10),allow_redirects=False)
         if response.status_code==429:return _limited(response,time.monotonic())
         if response.status_code!=200:return {'urls':[],'state':'unavailable','httpStatus':response.status_code}
@@ -122,7 +128,7 @@ def _discover_api(base,key):
                 if url not in urls:urls.append(url)
             except ValueError:continue
         # URL discovery only: never parse search snippets into price offers.
-        _url_cache[query]=(time.monotonic(),tuple(urls))
+        _url_cache[cache_key]=(time.monotonic(),tuple(urls))
         while len(_url_cache)>128:_url_cache.popitem(last=False)
         return {'urls':[u for u in urls if u!=base.get('url')],'state':'completed'}
     except (requests.RequestException,ValueError,TypeError):return {'urls':[],'state':'unavailable'}

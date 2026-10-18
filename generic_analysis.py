@@ -151,9 +151,9 @@ def discover_web(base):
     return selected
 
 
-def discover(base):
+def discover(base,merchants=False):
     """Catalog discovery works independently of the web search service."""
-    api=discover_api(base)
+    api=discover_api(dict(base,_merchantSearch=True) if merchants else base)
     if api['state']=='rate_limited':
         base['_search']={'status':'rate_limited','provider':'tavily_free','candidates':0,'retryAfterSeconds':api['retryAfterSeconds']}
         return []
@@ -169,6 +169,9 @@ def discover(base):
         if selected:
             base['_search']={'status':'completed','provider':'tavily_free','candidates':len(selected),'attempts':[]}
             return selected
+    if merchants:
+        base['_search']={'status':'completed' if api['state']=='completed' else 'unavailable','provider':'tavily_free','candidates':0,'officialApi':api['state']}
+        return []
     catalog=discover_catalogs(base)
     base['_catalogQuotes']=catalog.get('quotes',[])
     if catalog.get('identity') and base.get('_inputStructured') is False:
@@ -233,6 +236,15 @@ def compare(base):
         extra=[url for url in discover_web(base) if url not in urls][:6]
         web_status=base['_search'];base['_search']=dict(catalog_status,fallbackWebStatus=web_status['status'])
         base['_brochures']=(sources+base.get('_brochures',[]))[:4]
+        with ThreadPoolExecutor(max_workers=6) as pool:out+=list(pool.map(verify,extra))
+    if not any(out) and base.get('_search',{}).get('provider')=='tavily_free' and base['_search']['status']=='completed':
+        # A general web query can return only news or blocked retailers. One
+        # bounded marketplace query then discovers new URLs; it never retries
+        # failed pages or turns snippets into offers. Both queries use the same
+        # free-plan guard and credit reservations.
+        original=base['_search']
+        extra=[url for url in discover(base,merchants=True) if url not in urls][:6]
+        fallback=base['_search'];base['_search']=dict(original,merchantFallback=fallback)
         with ThreadPoolExecutor(max_workers=6) as pool:out+=list(pool.map(verify,extra))
     base.setdefault('_search',{})['checks']=checks
     base['_similar']=[x for x in out if x and x.get('identityConfirmed') is False]

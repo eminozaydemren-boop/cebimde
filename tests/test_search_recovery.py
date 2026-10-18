@@ -58,3 +58,21 @@ def test_unconfirmed_phone_candidates_never_supply_savings_or_watch_price(monkey
     result=generic.analyze_any_seller('https://www.trendyol.com/honor/600-pro-512-gb-12-gb-ram-p-1140479956')
     assert result['similarOffers'] and result['price'] is None and result['savings']==0
     assert result['identityVerified'] is False and result['offers']==[]
+
+def test_general_news_results_trigger_only_one_merchant_query(monkeypatch):
+    import json
+    urls=['https://news-site.com/article','https://www.hepsiburada.com/honor-phone-p-HBCV000TEST']
+    calls=[]
+    def search(base):
+        calls.append(bool(base.get('_merchantSearch')))
+        return {'urls':[urls[1] if base.get('_merchantSearch') else urls[0]],'state':'completed'}
+    monkeypatch.setattr(generic,'discover_api',search)
+    p={'@type':'Product','name':'Honor 600 Pro 5G 512 GB 12 GB RAM Siyah','brand':{'name':'Honor'},'url':urls[1],
+       'offers':{'@type':'Offer','price':50000,'priceCurrency':'TRY'}}
+    def read(url,**kw):
+        return ('<script type="application/ld+json">'+json.dumps(p)+'</script>' if url==urls[1] else '<h1>News</h1>',url)
+    monkeypatch.setattr(generic,'fetch_page',read)
+    base={'title':TITLE,'url':'https://www.trendyol.com/honor/600-pro-p-1140479956'}
+    assert generic.compare(base)==[]
+    assert calls==[False,True] and len(base['_similar'])==1
+    assert base['_similar'][0]['identityConfirmed'] is False

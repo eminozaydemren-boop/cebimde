@@ -217,3 +217,14 @@ Suggestions remain excluded from verified prices, savings and watch receipts.
 
 V3.92 adds bounded merchant verification diagnostics and a seven-second read
 budget per candidate, matching the submitted merchant page budget.
+
+
+### V3.93: bounded merchant fallback after unusable discovery
+
+Exclude comparison/social domains in the search request, before result slots
+are consumed. If general discovery produces neither verified offers nor
+unconfirmed candidates, make at most one marketplace-filtered basic query
+using the supported marketplace domains. Verify up to six new pages. Never
+retry rejected pages, spend paid credits or promote search text to prices.
+The Gunicorn configuration keeps one process for shared credit reservations,
+four request threads and a 60-second request timeout.

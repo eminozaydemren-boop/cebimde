@@ -130,3 +130,14 @@ def test_key_change_invalidates_cached_discovery_and_billing(monkeypatch):
     monkeypatch.setenv('TAVILY_API_KEY','different-key')
     search_api.discover_api({'title':'A'})
     assert get.call_count==2 and post.call_count==2
+
+def test_marketplace_fallback_has_separate_cache_but_same_free_budget(monkeypatch):
+    get,post=provider(monkeypatch)
+    search_api.discover_api({'title':'A'})
+    search_api.discover_api({'title':'A','_merchantSearch':True})
+    search_api.discover_api({'title':'A','_merchantSearch':True})
+    assert get.call_count==1 and post.call_count==2
+    assert 'include_domains' not in post.call_args_list[0].kwargs['json']
+    assert 'hepsiburada.com' in post.call_args_list[1].kwargs['json']['include_domains']
+    assert 'akakce.com' in post.call_args_list[0].kwargs['json']['exclude_domains']
+    assert search_api._state['reserved']==2
