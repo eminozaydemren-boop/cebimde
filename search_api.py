@@ -4,7 +4,7 @@ from urllib.parse import urlparse
 import requests
 from public_web import normalize_url
 
-def free_plan(usage):
+def free_plan(usage,development=False):
     if not isinstance(usage,dict):return False
     account=usage.get('account') or {}
     if not isinstance(account,dict):return False
@@ -13,8 +13,22 @@ def free_plan(usage):
     if str(account.get('current_plan','')).casefold()!='researcher':return False
     if not number(limit) or not 0<limit<=1000:return False
     if not number(used) or not 0<=used<limit-5:return False
-    # Missing billing information is not permission to risk an overage charge.
-    return number(account.get('paygo_limit')) and account['paygo_limit']==0 and number(account.get('paygo_usage')) and account['paygo_usage']==0
+    if not number(account.get('paygo_usage')) or account['paygo_usage']!=0:return False
+    if 'paygo_limit' not in account:return False
+    paygo=account['paygo_limit']
+    if number(paygo):return paygo==0
+    # The observed free, PAYGO-off account returns explicit null, not zero.
+    # Do not interpret null as a zero/unlimited allowance. Accept it only for a
+    # development key with a provider-enforced monthly cap whose ENTIRE remaining
+    # budget fits inside the remaining free plan, with five credits held back.
+    # Missing fields, uncapped keys and any paid usage still fail closed.
+    if paygo is not None or not development:return False
+    api_key=usage.get('key')
+    if not isinstance(api_key,dict):return False
+    key_limit=api_key.get('limit');key_used=api_key.get('usage')
+    return (number(key_limit) and 0<key_limit<=limit-5
+            and number(key_used) and 0<=key_used<key_limit and key_used<=used
+            and key_limit-key_used<=limit-used-5)
 
 def discover_api(base):
     key=os.getenv('TAVILY_API_KEY','').strip()
@@ -24,7 +38,7 @@ def discover_api(base):
         usage=requests.get('https://api.tavily.com/usage',headers=headers,timeout=(3,5),allow_redirects=False)
         if usage.status_code!=200:return {'urls':[],'state':'usage_unavailable'}
         usage_data=usage.json()
-        if not free_plan(usage_data):
+        if not free_plan(usage_data,development=key.startswith('tvly-dev-')):
             # Log only allowlisted billing field types/counts, never credentials,
             # response bodies, request headers, or arbitrary provider strings.
             account=usage_data.get('account',{}) if isinstance(usage_data,dict) else {}

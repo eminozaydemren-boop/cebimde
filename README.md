@@ -1,4 +1,4 @@
-# CEBİMDE V3.83
+# CEBİMDE V3.89
 
 Price comparison and persistent target-price watches. Existing comparison providers and page styles are preserved.
 
@@ -168,3 +168,19 @@ research succeeding does not establish production access. Catalog discovery is
 an optional fallback, not a demonstrated fix for the production search outage.
 An authenticated free API account must be connected and live-tested before
 claiming the general product search problem is resolved.
+
+
+### V3.89: bounded free development-key compatibility
+
+The connected Researcher account reports `paygo_limit: null` while the billing
+dashboard explicitly says PAYGO is off and requests stop at the plan limit.
+Zero numeric paygo limits retain the original strict checks. Explicit null is
+accepted only for a `tvly-dev-` key when the usage API reports a positive,
+provider-enforced monthly key limit whose entire remaining budget fits inside
+the remaining free plan with five credits held back. Missing limits, unlimited
+keys, paid plans, nonzero paid usage and insufficient free capacity fail closed.
+The connected key was capped at 900 credits/month; PAYGO and auto-upgrade remain
+off. Each search still checks current account usage before one basic query.
+This fixes a billing-response compatibility issue, not merchant access or
+exhaustive product coverage. Merchant pages still require fresh matching price
+verification; snippets, catalog quotes and brochures do not become savings.
