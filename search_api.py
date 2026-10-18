@@ -1,5 +1,5 @@
 """Optional official search API. Reject paid plans and enabled overage billing."""
-import os,re
+import os,re,json
 from urllib.parse import urlparse
 import requests
 from public_web import normalize_url
@@ -23,7 +23,17 @@ def discover_api(base):
     try:
         usage=requests.get('https://api.tavily.com/usage',headers=headers,timeout=(3,5),allow_redirects=False)
         if usage.status_code!=200:return {'urls':[],'state':'usage_unavailable'}
-        if not free_plan(usage.json()):return {'urls':[],'state':'free_plan_not_verified'}
+        usage_data=usage.json()
+        if not free_plan(usage_data):
+            # Log only allowlisted billing field types/counts, never credentials,
+            # response bodies, request headers, or arbitrary provider strings.
+            account=usage_data.get('account',{}) if isinstance(usage_data,dict) else {}
+            account=account if isinstance(account,dict) else {}
+            diagnostic={name:(account[name] if account[name] is None or type(account[name]) in (int,float,bool) else type(account[name]).__name__) if name in account else 'missing'
+                        for name in ('plan_limit','plan_usage','paygo_limit','paygo_usage')}
+            diagnostic['researcher']=str(account.get('current_plan','')).casefold()=='researcher'
+            print('[SEARCH_FREE_PLAN_REJECTED]',json.dumps(diagnostic),flush=True)
+            return {'urls':[],'state':'free_plan_not_verified'}
         query=str(base.get('gtin') or base.get('mpn') or base.get('title') or '')[:180]+' fiyat satın al Türkiye'
         response=requests.post('https://api.tavily.com/search',headers=headers,json={
             'query':query,'search_depth':'basic','auto_parameters':False,'topic':'general',
