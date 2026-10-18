@@ -1,4 +1,4 @@
-# CEBİMDE V3.89
+# CEBİMDE V3.90
 
 Price comparison and persistent target-price watches. Existing comparison providers and page styles are preserved.
 
@@ -184,3 +184,18 @@ off. Each search still checks current account usage before one basic query.
 This fixes a billing-response compatibility issue, not merchant access or
 exhaustive product coverage. Merchant pages still require fresh matching price
 verification; snippets, catalog quotes and brochures do not become savings.
+
+
+### V3.90: reported Hepsiburada product and mobile heading regression
+
+The reported Flodex link exposed two bugs: all H1 headings were joined into one
+product name, including review headings; and a page-bound WebPage.mainEntity
+Product was rejected when additional review Products omitted prices.
+Unstructured fallback now selects one H1 instead of concatenating separate
+headings and ignores script/style text. Schema extraction accepts an explicit
+Offer URL bound to the submitted product. Known store product IDs permit a
+canonical slug change, but changed hosts, product IDs and nontracking query
+variants are rejected. Conflicting bound identities remain ambiguous. Other
+product offers, foreign currency and out-of-stock offers cannot supply prices.
+Mobile product headings use the full card width; the existing green styling is
+preserved. The exact reported URL is covered without an optional name hint.

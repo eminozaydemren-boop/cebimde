@@ -3,6 +3,7 @@ from urllib.parse import urlparse,urljoin
 
 def structured_product(page,url):
     from app import walk,clean_price
+    from product_links import same_product_page
     products=[]
     for raw in re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',page,re.I|re.S):
         try:data=json.loads(raw.strip())
@@ -13,8 +14,18 @@ def structured_product(page,url):
             t=p.get('@type');t=t if isinstance(t,list) else [t]
             if 'Product' in t:products.append(p)
     unique={json.dumps(p,sort_keys=True):p for p in products};products=list(unique.values())
-    path=urlparse(url).path.rstrip('/').casefold()
-    exact=[p for p in products if urlparse(urljoin(url,str(p.get('url') or ''))).path.rstrip('/').casefold()==path and p.get('url')]
+    def bound(p):
+        # Some WebPage.mainEntity Products omit Product.url but put the exact
+        # product destination on Offer.url. Review/recommendation Products must
+        # not suppress that main priced Product or supply a different price.
+        if p.get('url'):return same_product_page(url,urljoin(url,str(p['url'])))
+        offers=p.get('offers') or [];offers=offers if isinstance(offers,list) else [offers]
+        return any(isinstance(o,dict) and o.get('@type')!='AggregateOffer' and o.get('url')
+                   and same_product_page(url,urljoin(url,str(o['url']))) for o in offers)
+    exact=[p for p in products if bound(p)]
+    # More than one bound identity is ambiguous, even if the URLs are the same.
+    for key in ('gtin13','gtin14','gtin12','gtin8','gtin','sku','mpn'):
+        if len({str(p[key]).strip().casefold() for p in exact if p.get(key)})>1:return None
     candidates=exact or ([products[0]] if len(products)==1 and not products[0].get('url') else [])
     if not candidates:return meta_product(page,url)
     p=candidates[0];brand=p.get('brand')
@@ -28,6 +39,7 @@ def structured_product(page,url):
     prices=[]
     for o in offers:
         if not isinstance(o,dict) or o.get('@type')=='AggregateOffer':continue
+        if o.get('url') and not same_product_page(url,urljoin(url,str(o['url']))):continue
         if str(o.get('priceCurrency','')).upper() not in ('TRY','TL','₺'):continue
         availability=str(o.get('availability') or '').rsplit('/',1)[-1]
         if availability and availability not in ('InStock','LimitedAvailability','OnlineOnly'):continue

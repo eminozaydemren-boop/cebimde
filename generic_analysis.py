@@ -45,17 +45,25 @@ def candidate_link(url):
 
 class PageMeta(HTMLParser):
     def __init__(self):
-        super().__init__(convert_charrefs=True);self.meta={};self.heading=[];self.in_h1=False
+        super().__init__(convert_charrefs=True);self.meta={};self.headings=[];self.current_heading=None;self.ignored=0
     def handle_starttag(self,tag,attrs):
         a=dict(attrs)
         if tag=='meta':
             key=a.get('property') or a.get('name')
             if key:self.meta.setdefault(key.casefold(),a.get('content',''))
-        if tag=='h1':self.in_h1=True
+        if tag in ('script','style'):self.ignored+=1
+        if tag=='h1' and not self.ignored:
+            self.current_heading=[];self.headings.append(self.current_heading)
     def handle_endtag(self,tag):
-        if tag=='h1':self.in_h1=False
+        if tag=='h1':self.current_heading=None
+        if tag in ('script','style'):self.ignored=max(0,self.ignored-1)
     def handle_data(self,value):
-        if self.in_h1:self.heading.append(value)
+        if self.current_heading is not None and not self.ignored:self.current_heading.append(value)
+    @property
+    def heading(self):
+        # Separate h1 elements are separate headings, not parts of a product name.
+        # Retailers commonly use additional h1 elements for product reviews.
+        return next((parts for parts in self.headings if ''.join(parts).strip()),[])
 
 
 def gtin_in_url(url):
@@ -232,6 +240,7 @@ def analyze_any_seller(target,hint=''):
             try:meta.feed(body)
             except Exception:pass
             title=meta.meta.get('og:title') or ' '.join(meta.heading).strip()
+            title=re.sub(r'\s+',' ',html.unescape(title or '')).strip()
             if title:base={'title':title[:250],'url':source,'price':None,'currency':None}
     if not base:
         title=str(hint or '').strip()[:250] or url_title(source)
