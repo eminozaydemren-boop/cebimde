@@ -228,3 +228,13 @@ using the supported marketplace domains. Verify up to six new pages. Never
 retry rejected pages, spend paid credits or promote search text to prices.
 The Gunicorn configuration keeps one process for shared credit reservations,
 four request threads and a 60-second request timeout.
+
+
+### V3.94: keep blocked-source identity unconfirmed
+
+When the input is only an unverified URL-derived name without a barcode,
+matching shop prices remain candidates until the user selects a product.
+Even equivalent titles cannot verify the inaccessible source's variant.
+The bounded merchant query also runs when fewer than two merchant sources
+are found, so a single result cannot suppress independent discovery.
+Candidate prices remain excluded from savings and watch snapshots.

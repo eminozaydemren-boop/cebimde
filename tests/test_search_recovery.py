@@ -76,3 +76,13 @@ def test_general_news_results_trigger_only_one_merchant_query(monkeypatch):
     assert generic.compare(base)==[]
     assert calls==[False,True] and len(base['_similar'])==1
     assert base['_similar'][0]['identityConfirmed'] is False
+
+def test_identical_full_title_cannot_verify_a_blocked_input_variant(monkeypatch):
+    import json
+    url='https://shop.com/product'
+    monkeypatch.setattr(generic,'discover',lambda base:[url])
+    product={'@type':'Product','name':TITLE,'url':url,'offers':{'@type':'Offer','price':50000,'priceCurrency':'TRY'}}
+    monkeypatch.setattr(generic,'fetch_page',lambda *a,**kw:('<script type="application/ld+json">'+json.dumps(product)+'</script>',url))
+    base={'title':TITLE,'_inputStructured':False}
+    assert generic.compare(base)==[]
+    assert base['_similar'][0]['price']==50000 and base['_similar'][0]['identityConfirmed'] is False

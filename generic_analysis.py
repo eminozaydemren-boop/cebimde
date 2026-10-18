@@ -217,13 +217,14 @@ def compare(base):
             if read.get('status'):check['httpStatus']=read['status']
             if page:
                 result=verified_offer(page[0],page[1],base)
-                if result:
+                confirmed_input=base.get('_inputStructured') is not False or bool(base.get('gtin'))
+                if result and confirmed_input:
                     candidate=structured_product(page[0],page[1]);check['state']='verified'
                     return dict(result,source=urlparse(result['url']).hostname.removeprefix('www.'),title=candidate['title'])
                 candidate=structured_product(page[0],page[1])
                 check['state']='no_product' if not candidate else 'no_price' if candidate.get('price') is None else 'identity_mismatch'
                 if candidate:check.update(title=candidate['title'],brand=candidate.get('brand'))
-                if candidate and candidate.get('price') is not None and plausible_product(base,candidate):
+                if candidate and candidate.get('price') is not None and (plausible_product(base,candidate) or (result and not confirmed_input)):
                     check['state']='candidate'
                     return {'source':urlparse(page[1]).hostname.removeprefix('www.'),'url':page[1],'title':candidate['title'],'price':candidate['price'],'identityConfirmed':False}
         except Exception:pass
@@ -237,7 +238,7 @@ def compare(base):
         web_status=base['_search'];base['_search']=dict(catalog_status,fallbackWebStatus=web_status['status'])
         base['_brochures']=(sources+base.get('_brochures',[]))[:4]
         with ThreadPoolExecutor(max_workers=6) as pool:out+=list(pool.map(verify,extra))
-    if not any(out) and base.get('_search',{}).get('provider')=='tavily_free' and base['_search']['status']=='completed':
+    if len({item['source'] for item in out if item})<2 and base.get('_search',{}).get('provider')=='tavily_free' and base['_search']['status']=='completed':
         # A general web query can return only news or blocked retailers. One
         # bounded marketplace query then discovers new URLs; it never retries
         # failed pages or turns snippets into offers. Both queries use the same
@@ -245,6 +246,8 @@ def compare(base):
         original=base['_search']
         extra=[url for url in discover(base,merchants=True) if url not in urls][:6]
         fallback=base['_search'];base['_search']=dict(original,merchantFallback=fallback)
+        if fallback['status']=='rate_limited' and not any(out):
+            base['_search'].update(status='rate_limited',retryAfterSeconds=fallback['retryAfterSeconds'])
         with ThreadPoolExecutor(max_workers=6) as pool:out+=list(pool.map(verify,extra))
     base.setdefault('_search',{})['checks']=checks
     base['_similar']=[x for x in out if x and x.get('identityConfirmed') is False]
