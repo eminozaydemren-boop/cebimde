@@ -11,3 +11,5 @@
 
 /* Give product names the full mobile width instead of a narrow badge column. */
 @media(max-width:760px){.sectionhead{flex-direction:column;gap:10px;align-items:stretch}.sectionhead h2{font-size:22px;line-height:1.3;letter-spacing:-.25px;overflow-wrap:break-word}.sectionhead .confidence{align-self:flex-start;display:flex;align-items:center;gap:6px;padding:7px 11px;font-size:15px}.confidence br{display:none}.sectionhead>div:first-child>p{overflow-wrap:anywhere}.card{padding:20px}.linkstatus{overflow-wrap:anywhere}}
+
+button:disabled{opacity:.65;cursor:wait}

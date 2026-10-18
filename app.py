@@ -87,6 +87,8 @@ def model_token(title):
         return 'UT12D'
     if re.search(r'\bZBMINI[\s-]*L2\b',s):
         return 'ZBMINI-L2'
+    numeric=re.search(r'\b(\d{2,4})[ -]+(PRO(?:[ -]+(?:MAX|PLUS))?|ULTRA|PLUS|LITE|FE)\b',s)
+    if numeric:return re.sub(r'[ -]+','',numeric.group(0))
     toks=re.findall(r'(?=[A-Z0-9-]*[A-Z])(?=[A-Z0-9-]*[0-9])[A-Z0-9-]{4,}',s)
     for m in re.finditer(r'\b([A-Z]{1,5})[ -]+([0-9]{1,4}[A-Z]{1,4})\b',s):
         toks.append(m.group(1)+m.group(2))
@@ -554,7 +556,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.90',watchMonitoring=1,brochureReading=1,brochureDiscovery=1,officialSearchConfigured=bool(os.getenv('TAVILY_API_KEY')))
+def health():return jsonify(ok=True,service='cebimde',version='3.91',watchMonitoring=1,brochureReading=1,brochureDiscovery=1,officialSearchConfigured=bool(os.getenv('TAVILY_API_KEY')))
 
 @app.get('/api/debug/external')
 def debug_external():

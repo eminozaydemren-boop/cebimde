@@ -87,12 +87,21 @@ def same_product(base,candidate):
 def plausible_product(base,candidate):
     """Only an explicitly unconfirmed suggestion; never a comparison or watch price."""
     from app import model_token
-    if model_token(base.get('title')) or model_token(candidate.get('title')):return False
     for key in ('gtin','mpn'):
         if base.get(key) and candidate.get(key) and str(base[key])!=str(candidate[key]):return False
     brand=normalized_title(candidate.get('brand'))
     title=normalized_title(base.get('title'));other=normalized_title(candidate.get('title'))
     if not brand or not title.startswith(brand+' '):return False
+    model=model_token(base.get('title'));other_model=model_token(candidate.get('title'))
+    if model or other_model:
+        # Model suggestions remain unconfirmed. Require every storage/RAM amount
+        # and reject accessories; an unspecified color never becomes a saving.
+        av=variant_signature(title);bv=variant_signature(other)
+        if not model or model!=other_model or not av[1] or av[1]!=bv[1]:return False
+        if av[0] and av[0]!=bv[0]:return False
+        risky={'yedek','aksesuar','kilif','kapak','ekran','koruyucu','sarj','kablo','case','cover','protector'}
+        if (set(other.split())-set(title.split()))&risky:return False
+        return True
     av=variant_signature(title);bv=variant_signature(other)
     if not av[1] or av!=bv:return False
     ignored=set(brand.split())|{'li','lu','adet','rulo','ve','ile','icin'}

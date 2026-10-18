@@ -79,6 +79,10 @@ def url_title(url):
     slug=re.split(r'-(?:p|pm)-',slug,flags=re.I)[0]
     slug=re.sub(r'\.(?:html?|aspx?)$','',slug,flags=re.I)
     title=re.sub(r'[-_]+',' ',slug).strip()
+    parts=path.strip('/').split('/')
+    if (urlparse(url).hostname or '').removeprefix('www.')=='trendyol.com' and len(parts)==2:
+        brand=re.sub(r'[-_]+',' ',parts[0]).strip()
+        if brand and not title.casefold().startswith(brand.casefold()+' '):title=brand+' '+title
     return title[:250] if len(title)>=12 and len(title.split())>=2 else None
 
 
@@ -150,6 +154,9 @@ def discover_web(base):
 def discover(base):
     """Catalog discovery works independently of the web search service."""
     api=discover_api(base)
+    if api['state']=='rate_limited':
+        base['_search']={'status':'rate_limited','provider':'tavily_free','candidates':0,'retryAfterSeconds':api['retryAfterSeconds']}
+        return []
     if api['urls']:
         urls=[];duplicates=[];hosts=set()
         for value in api['urls']:
@@ -183,6 +190,7 @@ def discover(base):
         base['_brochures']=catalog['sources'][:4]
     base['_search']['catalogs']=catalog['diagnostics']
     base['_search']['officialApi']=api['state']
+    if api.get('httpStatus'):base['_search']['officialHttpStatus']=api['httpStatus']
     # Keep merchant diversity across catalog sources and remove tracking duplicates.
     distinct=[];duplicates=[];hosts=set();paths=set()
     for url in urls:

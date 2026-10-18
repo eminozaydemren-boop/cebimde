@@ -1,8 +1,33 @@
 """Optional official search API. Reject paid plans and enabled overage billing."""
-import os,re,json
+import os,re,json,time,hashlib,threading,copy,math
+from collections import OrderedDict
 from urllib.parse import urlparse
 import requests
 from public_web import normalize_url
+
+# A free /usage endpoint allows ten checks per ten minutes. One current free
+# service worker shares short-lived usage checks and URL discovery (never prices).
+# Reserve a credit before every POST, including failed/uncertain POSTs.
+_lock=threading.Lock()
+_state={}
+_url_cache=OrderedDict()
+USAGE_TTL=75
+URL_TTL=300
+
+def _limited(response,now):
+    try:seconds=max(1,int(response.headers.get('Retry-After','60')))
+    except (ValueError,TypeError):seconds=60
+    _state['blocked_until']=now+seconds
+    return {'urls':[],'state':'rate_limited','retryAfterSeconds':seconds}
+
+def _projected(usage,reserved):
+    result=copy.deepcopy(usage)
+    if not isinstance(result,dict):return result
+    for group,field in (('account','plan_usage'),('key','usage')):
+        section=result.get(group)
+        value=section.get(field) if isinstance(section,dict) else None
+        if type(value) in (int,float):result[group][field]=value+reserved
+    return result
 
 def free_plan(usage,development=False):
     if not isinstance(usage,dict):return False
@@ -33,11 +58,40 @@ def free_plan(usage,development=False):
 def discover_api(base):
     key=os.getenv('TAVILY_API_KEY','').strip()
     if not key:return {'urls':[],'state':'not_configured'}
+    with _lock:return _discover_api(base,key)
+
+def _discover_api(base,key):
+    now=time.monotonic()
+    scope=(hashlib.sha256(key.encode()).hexdigest(),time.strftime('%Y-%m',time.gmtime()))
+    if _state.get('scope')!=scope:
+        _state.clear();_state.update(scope=scope,reserved=0,checked_at=0,blocked_until=0)
+        _url_cache.clear()
+    query=str(base.get('gtin') or base.get('mpn') or base.get('title') or '')[:180]+' fiyat satın al Türkiye'
+    if query in _url_cache:
+        stamp,urls=_url_cache[query]
+        if now-stamp<URL_TTL:
+            return {'urls':[u for u in urls if u!=base.get('url')],'state':'completed'}
+        del _url_cache[query]
+    if now<_state.get('blocked_until',0):
+        return {'urls':[],'state':'rate_limited','retryAfterSeconds':math.ceil(_state['blocked_until']-now)}
     headers={'Authorization':'Bearer '+key,'Content-Type':'application/json'}
     try:
-        usage=requests.get('https://api.tavily.com/usage',headers=headers,timeout=(3,5),allow_redirects=False)
-        if usage.status_code!=200:return {'urls':[],'state':'usage_unavailable'}
-        usage_data=usage.json()
+        if 'usage' not in _state or now-_state['checked_at']>=USAGE_TTL:
+            usage=requests.get('https://api.tavily.com/usage',headers=headers,timeout=(3,5),allow_redirects=False)
+            if usage.status_code==429:return _limited(usage,now)
+            if usage.status_code!=200:return {'urls':[],'state':'usage_unavailable','httpStatus':usage.status_code}
+            usage_data=usage.json()
+            # Do not release local reservations if the provider's counter lags.
+            previous=_projected(_state['usage'],_state['reserved']) if 'usage' in _state else {}
+            if isinstance(usage_data,dict):
+                for group,field in (('account','plan_usage'),('key','usage')):
+                    old_group=previous.get(group) if isinstance(previous,dict) else None
+                    new_group=usage_data.get(group)
+                    old=old_group.get(field) if isinstance(old_group,dict) else None
+                    new=new_group.get(field) if isinstance(new_group,dict) else None
+                    if type(old) in (int,float) and type(new) in (int,float):usage_data[group][field]=max(old,new)
+            _state.update(usage=usage_data,checked_at=now,reserved=0)
+        usage_data=_projected(_state['usage'],_state['reserved'])
         if not free_plan(usage_data,development=key.startswith('tvly-dev-')):
             # Log only allowlisted billing field types/counts, never credentials,
             # response bodies, request headers, or arbitrary provider strings.
@@ -48,12 +102,13 @@ def discover_api(base):
             diagnostic['researcher']=str(account.get('current_plan','')).casefold()=='researcher'
             print('[SEARCH_FREE_PLAN_REJECTED]',json.dumps(diagnostic),flush=True)
             return {'urls':[],'state':'free_plan_not_verified'}
-        query=str(base.get('gtin') or base.get('mpn') or base.get('title') or '')[:180]+' fiyat satın al Türkiye'
+        _state['reserved']+=1
         response=requests.post('https://api.tavily.com/search',headers=headers,json={
             'query':query,'search_depth':'basic','auto_parameters':False,'topic':'general',
             'country':'turkey','language':'tr','max_results':20,'include_answer':False,
             'include_raw_content':False,'include_images':False,'include_usage':True},
             timeout=(3,10),allow_redirects=False)
+        if response.status_code==429:return _limited(response,time.monotonic())
         if response.status_code!=200:return {'urls':[],'state':'unavailable','httpStatus':response.status_code}
         urls=[]
         data=response.json()
@@ -64,8 +119,10 @@ def discover_api(base):
                 url=normalize_url(result.get('url'))
                 host=urlparse(url).hostname.removeprefix('www.')
                 if host in ('google.com','youtube.com','facebook.com','instagram.com','akakce.com','cimri.com','epey.com'):continue
-                if url!=base.get('url') and url not in urls:urls.append(url)
+                if url not in urls:urls.append(url)
             except ValueError:continue
         # URL discovery only: never parse search snippets into price offers.
-        return {'urls':urls,'state':'completed'}
+        _url_cache[query]=(time.monotonic(),tuple(urls))
+        while len(_url_cache)>128:_url_cache.popitem(last=False)
+        return {'urls':[u for u in urls if u!=base.get('url')],'state':'completed'}
     except (requests.RequestException,ValueError,TypeError):return {'urls':[],'state':'unavailable'}

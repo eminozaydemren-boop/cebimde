@@ -2,6 +2,12 @@ from unittest.mock import Mock
 import pytest
 import search_api
 
+@pytest.fixture(autouse=True)
+def fresh_search_state():
+    search_api._state.clear();search_api._url_cache.clear()
+    yield
+    search_api._state.clear();search_api._url_cache.clear()
+
 def usage(**overrides):
     account={'current_plan':'Researcher','plan_usage':10,'plan_limit':1000,'paygo_limit':0,'paygo_usage':0}
     account.update(overrides);return {'account':account}
@@ -68,3 +74,59 @@ def test_basic_discovery_uses_only_urls_never_snippet_prices(monkeypatch):
     assert post.call_args.kwargs['json']['search_depth']=='basic'
     assert post.call_args.kwargs['json']['auto_parameters'] is False
     assert post.call_args.kwargs['allow_redirects'] is False
+
+def provider(monkeypatch,account=None):
+    monkeypatch.setenv('TAVILY_API_KEY','test-key')
+    get=Mock(return_value=Mock(status_code=200,json=lambda:account or usage()))
+    post=Mock(return_value=Mock(status_code=200,json=lambda:{'results':[{'url':'https://seller.com/product'}]}))
+    monkeypatch.setattr(search_api.requests,'get',get);monkeypatch.setattr(search_api.requests,'post',post)
+    return get,post
+
+def test_repeated_query_reuses_only_destinations_and_shares_usage_check(monkeypatch):
+    get,post=provider(monkeypatch)
+    assert search_api.discover_api({'title':'A'})['urls']==['https://seller.com/product']
+    assert search_api.discover_api({'title':'A','url':'https://seller.com/product'})['urls']==[]
+    search_api.discover_api({'title':'B'})
+    assert get.call_count==1 and post.call_count==2
+    assert search_api._state['reserved']==2
+
+def test_reservations_prevent_spending_the_free_safety_margin(monkeypatch):
+    get,post=provider(monkeypatch,usage(plan_usage=993))
+    for title in ('A','B'):assert search_api.discover_api({'title':title})['state']=='completed'
+    assert search_api.discover_api({'title':'C'})['state']=='free_plan_not_verified'
+    assert post.call_count==2 and get.call_count==1
+
+def test_usage_429_honors_retry_after_without_repeating_requests(monkeypatch):
+    get,post=provider(monkeypatch);clock=[1000]
+    monkeypatch.setattr(search_api.time,'monotonic',lambda:clock[0])
+    assert search_api.discover_api({'title':'A'})['state']=='completed'
+    clock[0]+=76;get.return_value=Mock(status_code=429,headers={'Retry-After':'120'})
+    assert search_api.discover_api({'title':'B'})=={'urls':[],'state':'rate_limited','retryAfterSeconds':120}
+    clock[0]+=30
+    assert search_api.discover_api({'title':'B'})['retryAfterSeconds']==90
+    assert get.call_count==2 and post.call_count==1
+    # Cached URLs need no provider call, nor do they contain a cached price.
+    assert search_api.discover_api({'title':'A'})['urls']==['https://seller.com/product']
+    clock[0]+=91;get.return_value=Mock(status_code=200,json=lambda:usage())
+    assert search_api.discover_api({'title':'B'})['state']=='completed'
+
+def test_lagging_usage_counter_does_not_release_reserved_credits(monkeypatch):
+    get,post=provider(monkeypatch,usage(plan_usage=993));clock=[1000]
+    monkeypatch.setattr(search_api.time,'monotonic',lambda:clock[0])
+    search_api.discover_api({'title':'A'});clock[0]+=76
+    search_api.discover_api({'title':'B'})
+    assert search_api.discover_api({'title':'C'})['state']=='free_plan_not_verified'
+    assert post.call_count==2
+
+@pytest.mark.parametrize('malformed',[None,[],{'account':None},{'account':[]},{'account':{'current_plan':'Project'}}])
+def test_malformed_usage_fails_closed_without_crashing(monkeypatch,malformed):
+    get,post=provider(monkeypatch)
+    get.return_value=Mock(status_code=200,json=lambda:malformed)
+    assert search_api.discover_api({'title':'A'})['state']=='free_plan_not_verified'
+    post.assert_not_called()
+
+def test_key_change_invalidates_cached_discovery_and_billing(monkeypatch):
+    get,post=provider(monkeypatch);search_api.discover_api({'title':'A'})
+    monkeypatch.setenv('TAVILY_API_KEY','different-key')
+    search_api.discover_api({'title':'A'})
+    assert get.call_count==2 and post.call_count==2

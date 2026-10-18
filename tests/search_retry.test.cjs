@@ -8,20 +8,20 @@ function runner(responses){
  const request=vm.runInNewContext(prefix+';requestProduct',{URL,fetch:async()=>({json:async()=>responses[Math.min(calls++,responses.length-1)]}),setTimeout:resolve=>resolve()});
  return {request,calls:()=>calls};
 }
-test('a waking free search is retried and returns the verified result',async()=>{
+test('unavailable search never silently repeats or claims a cold start',async()=>{
  const unavailable={ok:true,product:{searchMode:'open_web',search:{status:'unavailable'}}};
  const ready={ok:true,product:{price:123,searchMode:'open_web',search:{status:'completed'}}};
  const r=runner([unavailable,ready]);const messages=[];
  const result=await r.request('https://seller.com/product','',m=>messages.push(m));
- assert.equal(result.product.price,123);assert.equal(r.calls(),2);assert.equal(messages.length,1);
+ assert.equal(result.product.search.status,'unavailable');assert.equal(r.calls(),1);assert.equal(messages.length,0);
 });
 test('existing marketplace results are never retried by free-search recovery',async()=>{
  const r=runner([{ok:true,product:{title:'Product',price:100}}]);
  await r.request('https://www.trendyol.com/product-p-123','',()=>{});assert.equal(r.calls(),1);
 });
-test('unavailable free search stops after four total attempts',async()=>{
+test('unavailable free search makes one request',async()=>{
  const r=runner([{ok:true,product:{searchMode:'open_web',search:{status:'unavailable'}}}]);
- await r.request('https://seller.com/product','',()=>{});assert.equal(r.calls(),4);
+ await r.request('https://seller.com/product','',()=>{});assert.equal(r.calls(),1);
 });
 
 test('upstream access failures do not trigger repeated identical searches',async()=>{
@@ -53,4 +53,10 @@ test('available brochure results render immediately when web search is waking',a
  const r=runner([result]);
  const returned=await r.request('https://seller.com/product','',()=>{throw Error('Should render available brochure result');});
  assert.equal(r.calls(),1);assert.equal(returned.product.brochureOffers[0].price,239);
+});
+
+test('rate limited searches make one request and never announce service wakeup',async()=>{
+ const r=runner([{ok:true,product:{searchMode:'open_web',search:{status:'rate_limited',retryAfterSeconds:120}}}]);
+ const d=await r.request('https://seller.com/product','',()=>{throw Error('No automatic retry');});
+ assert.equal(d.product.search.status,'rate_limited');assert.equal(r.calls(),1);
 });

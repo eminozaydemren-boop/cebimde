@@ -199,3 +199,18 @@ variants are rejected. Conflicting bound identities remain ambiguous. Other
 product offers, foreign currency and out-of-stock offers cannot supply prices.
 Mobile product headings use the full card width; the existing green styling is
 preserved. The exact reported URL is covered without an optional name hint.
+
+
+### V3.91: shared free-plan checks and explicit search limits
+
+Tavily URL discovery is shared for five minutes; prices are never cached.
+Billing checks are shared for 75 seconds within the current single worker,
+with one reserved credit for every attempted basic search. Refreshes cannot
+release reservations when usage counters lag. Expired billing checks fail
+closed and HTTP 429 honors Retry-After. Key/month changes clear state.
+No frontend automatic retries occur; the analysis button blocks duplicate
+clicks until the request finishes. Rate limits are shown explicitly.
+Trendyol fallback names retain the brand path. Numeric model qualifiers,
+storage, RAM and accessories constrain unconfirmed product suggestions.
+Suggestions remain excluded from verified prices, savings and watch receipts.
+198 Python and 18 JavaScript tests pass. Merchant blocking still limits coverage.
