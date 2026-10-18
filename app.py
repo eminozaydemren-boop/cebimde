@@ -556,7 +556,7 @@ def unhandled(e):
 def home():return send_from_directory('web','index.html')
 
 @app.get('/health')
-def health():return jsonify(ok=True,service='cebimde',version='3.91',watchMonitoring=1,brochureReading=1,brochureDiscovery=1,officialSearchConfigured=bool(os.getenv('TAVILY_API_KEY')))
+def health():return jsonify(ok=True,service='cebimde',version='3.92',watchMonitoring=1,brochureReading=1,brochureDiscovery=1,officialSearchConfigured=bool(os.getenv('TAVILY_API_KEY')))
 
 @app.get('/api/debug/external')
 def debug_external():

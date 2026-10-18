@@ -60,3 +60,19 @@ test('rate limited searches make one request and never announce service wakeup',
  const d=await r.request('https://seller.com/product','',()=>{throw Error('No automatic retry');});
  assert.equal(d.product.search.status,'rate_limited');assert.equal(r.calls(),1);
 });
+
+test('analysis button blocks overlapping requests and recovers after failure',async()=>{
+ const source=fs.readFileSync('web/app.js','utf8');
+ const handler=source.slice(0,source.indexOf('\n\n',source.indexOf("q('#analyze').onclick")));
+ const elements={};
+ for(const id of ['url','linkstatus','analysis','analyze','productHint'])elements['#'+id]={value:'',textContent:'',disabled:false,classList:{add(){},remove(){}}};
+ elements['#url'].value='https://www.trendyol.com/honor/600-pro-p-123456';
+ let calls=0,rejectRequest;
+ vm.runInNewContext(handler,{URL,document:{querySelector:id=>elements[id]},location:{protocol:'https:'},fetch:()=>{calls++;return new Promise((resolve,reject)=>{rejectRequest=reject});}});
+ const first=elements['#analyze'].onclick();
+ assert.equal(elements['#analyze'].disabled,true);
+ await elements['#analyze'].onclick();assert.equal(calls,1);
+ rejectRequest(new Error('offline'));await first;
+ assert.equal(elements['#analyze'].disabled,false);
+ assert.equal(elements['#analyze'].textContent,'Ürünü analiz et');
+});

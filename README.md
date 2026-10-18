@@ -213,4 +213,7 @@ clicks until the request finishes. Rate limits are shown explicitly.
 Trendyol fallback names retain the brand path. Numeric model qualifiers,
 storage, RAM and accessories constrain unconfirmed product suggestions.
 Suggestions remain excluded from verified prices, savings and watch receipts.
-198 Python and 18 JavaScript tests pass. Merchant blocking still limits coverage.
+200 Python and 19 JavaScript tests pass. Merchant blocking still limits coverage.
+
+V3.92 adds bounded merchant verification diagnostics and a seven-second read
+budget per candidate, matching the submitted merchant page budget.

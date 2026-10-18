@@ -34,3 +34,27 @@ def test_phone_color_options_remain_unconfirmed_candidates():
 ])
 def test_other_models_storage_ram_and_accessories_are_rejected(title):
     assert not plausible_product({'title':TITLE},{'title':title,'brand':'Honor'})
+
+def test_cached_destinations_still_read_merchant_prices_each_time(monkeypatch):
+    import json
+    prices=iter([100,125])
+    url='https://seller.com/product'
+    monkeypatch.setattr(generic,'discover',lambda base:[url])
+    def fresh_page(*args,**kwargs):
+        p={'@type':'Product','name':'Example Test Widget 100 ml','url':url,'gtin13':'8692857016208',
+           'offers':{'@type':'Offer','price':next(prices),'priceCurrency':'TRY'}}
+        return '<script type="application/ld+json">'+json.dumps(p)+'</script>',url
+    monkeypatch.setattr(generic,'fetch_page',fresh_page)
+    base={'title':'Example Test Widget 100 ml','gtin':'8692857016208'}
+    assert generic.compare(dict(base))[0]['price']==100
+    assert generic.compare(dict(base))[0]['price']==125
+
+def test_unconfirmed_phone_candidates_never_supply_savings_or_watch_price(monkeypatch):
+    monkeypatch.setattr(generic,'fetch_page',lambda *a,**kw:None)
+    def compare(base):
+        base['_similar']=[{'title':'Honor 600 Pro 512 GB 12 GB RAM Siyah','price':50000,'url':'https://seller.com/phone','identityConfirmed':False}]
+        return []
+    monkeypatch.setattr(generic,'compare',compare)
+    result=generic.analyze_any_seller('https://www.trendyol.com/honor/600-pro-512-gb-12-gb-ram-p-1140479956')
+    assert result['similarOffers'] and result['price'] is None and result['savings']==0
+    assert result['identityVerified'] is False and result['offers']==[]

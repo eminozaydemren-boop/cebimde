@@ -206,16 +206,22 @@ def discover(base):
 
 def compare(base):
     urls=discover(base)
+    checks=[]
     def verify(url):
+        read={};check={'url':url,'state':'unreadable'};checks.append(check)
         try:
-            page=fetch_page(url,budget=5)
+            page=fetch_page(url,budget=7,diagnostics=read)
+            if read.get('status'):check['httpStatus']=read['status']
             if page:
                 result=verified_offer(page[0],page[1],base)
                 if result:
-                    candidate=structured_product(page[0],page[1])
+                    candidate=structured_product(page[0],page[1]);check['state']='verified'
                     return dict(result,source=urlparse(result['url']).hostname.removeprefix('www.'),title=candidate['title'])
                 candidate=structured_product(page[0],page[1])
+                check['state']='no_product' if not candidate else 'no_price' if candidate.get('price') is None else 'identity_mismatch'
+                if candidate:check.update(title=candidate['title'],brand=candidate.get('brand'))
                 if candidate and candidate.get('price') is not None and plausible_product(base,candidate):
+                    check['state']='candidate'
                     return {'source':urlparse(page[1]).hostname.removeprefix('www.'),'url':page[1],'title':candidate['title'],'price':candidate['price'],'identityConfirmed':False}
         except Exception:pass
         return None
@@ -228,6 +234,7 @@ def compare(base):
         web_status=base['_search'];base['_search']=dict(catalog_status,fallbackWebStatus=web_status['status'])
         base['_brochures']=(sources+base.get('_brochures',[]))[:4]
         with ThreadPoolExecutor(max_workers=6) as pool:out+=list(pool.map(verify,extra))
+    base.setdefault('_search',{})['checks']=checks
     base['_similar']=[x for x in out if x and x.get('identityConfirmed') is False]
     return [x for x in out if x and x.get('identityConfirmed') is not False]
 
