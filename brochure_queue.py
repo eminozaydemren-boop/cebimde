@@ -1,5 +1,5 @@
 """Persistent fair queue for every merchant discovered in the brochure directory."""
-import json,re,secrets
+import json,re,secrets,hashlib,logging
 from datetime import date
 from urllib.parse import urlparse
 from flask import Blueprint,request,jsonify
@@ -19,6 +19,15 @@ def initialize(conn):
         next_page INTEGER NOT NULL DEFAULT 1,pages_read INTEGER NOT NULL DEFAULT 0,
         cards_read INTEGER NOT NULL DEFAULT 0,state TEXT NOT NULL DEFAULT 'pending')''')
     conn.execute('CREATE INDEX IF NOT EXISTS brochure_queue_due ON brochure_catalogs(completed_at,last_attempt)')
+    conn.execute('''CREATE TABLE IF NOT EXISTS brochure_batch_receipts (
+        lease_id TEXT PRIMARY KEY, payload_hash TEXT NOT NULL, imported INTEGER NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())''')
+
+def database_failure(operation,error,message):
+    # Never log SQL parameters, submitted cards, tokens or connection strings.
+    logging.getLogger(__name__).error('Brochure database failure operation=%s type=%s sqlstate=%s',
+        operation,type(error).__name__,getattr(error,'sqlstate',None))
+    return jsonify(ok=False,error=message),503
 
 def public_source(value,merchant=False):
     if not isinstance(value,str) or len(value)>1500:return False
@@ -63,8 +72,9 @@ def register_directory():
                     start_date=EXCLUDED.start_date,end_date=EXCLUDED.end_date,seen_at=NOW()''',(c['url'],c['merchantUrl'],c['startDate'],c['endDate']))
             conn.execute("DELETE FROM brochure_cards WHERE expires_on<CURRENT_DATE-7")
             conn.execute("DELETE FROM brochure_catalogs WHERE end_date<CURRENT_DATE-14")
+            conn.execute("DELETE FROM brochure_batch_receipts WHERE created_at<NOW()-INTERVAL '2 days'")
         return jsonify(ok=True,merchants=len(merchants),catalogs=len(catalogs))
-    except Exception:return jsonify(ok=False,error='Dizin kaydedilemedi'),503
+    except Exception as error:return database_failure('directory',error,'Dizin kaydedilemedi')
 
 @queue_api.post('/jobs/claim')
 def claim():
@@ -86,7 +96,7 @@ def claim():
                 cards_read=CASE WHEN completed_at IS NOT NULL THEN 0 ELSE cards_read END,
                 completed_at=NULL,state='scanning' WHERE url=%s''',(lease,url))
         return jsonify(ok=True,job=dict(url=url,page=1 if completed else page,lease=lease))
-    except Exception:return jsonify(ok=False,error='Tarama kuyruguna erisilemiyor'),503
+    except Exception as error:return database_failure('claim',error,'Tarama kuyruguna erisilemiyor')
 
 def valid_result(data):
     try:
@@ -106,9 +116,15 @@ def complete():
     if not request.content_length or request.content_length>2_000_000:return jsonify(ok=False),413
     data=request.get_json(silent=True)
     if not valid_result(data):return jsonify(ok=False,error='Tarama sonucu gecersiz'),400
+    digest=hashlib.sha256(json.dumps(data,sort_keys=True,separators=(',',':'),ensure_ascii=False).encode()).hexdigest()
     try:
         with db() as conn:
             initialize(conn)
+            receipt=conn.execute('SELECT payload_hash,imported FROM brochure_batch_receipts WHERE lease_id=%s',
+                (data['lease'],)).fetchone()
+            if receipt:
+                if receipt[0]!=digest:return jsonify(ok=False,error='Tarama sonucu degistirilmis'),409
+                return jsonify(ok=True,imported=receipt[1],replayed=True)
             # Lease and result are consumed in the same transaction: retries cannot double-count.
             row=conn.execute('''SELECT url FROM brochure_catalogs WHERE url=%s AND lease_id=%s
                 AND lease_until>NOW() FOR UPDATE''',(data['url'],data['lease'])).fetchone()
@@ -119,8 +135,10 @@ def complete():
                 cards_read=cards_read+%s,state=%s,lease_id=NULL,lease_until=NULL,
                 completed_at=CASE WHEN %s THEN NOW() ELSE NULL END WHERE url=%s''',
                 (data['nextPage'],data['pagesRead'],len(data['cards']),data['state'],data['complete'],data['url']))
+            conn.execute('INSERT INTO brochure_batch_receipts(lease_id,payload_hash,imported) VALUES(%s,%s,%s)',
+                (data['lease'],digest,len(data['cards'])))
         return jsonify(ok=True,imported=len(data['cards']))
-    except Exception:return jsonify(ok=False,error='Tarama sonucu kaydedilemedi'),503
+    except Exception as error:return database_failure('complete',error,'Tarama sonucu kaydedilemedi')
 
 @queue_api.get('/coverage')
 def coverage():
@@ -136,4 +154,4 @@ def coverage():
             priced=sum(r[8]>0 for r in rows)
         merchants=[dict(name=r[0],catalogs=r[1],lastAttempt=r[2].isoformat() if r[2] else None,pagesRead=r[3],cardsRead=r[4],unavailable=r[5],completedAt=r[6].isoformat() if r[6] else None,discoveryState=r[7],indexedCards=r[8]) for r in rows]
         return jsonify(ok=True,source='katalog24.com.tr',discoveredMerchants=len(rows),activeMerchants=sum(r[1]>0 for r in rows),attemptedMerchants=sum(r[2] is not None for r in rows),pricedMerchants=priced,merchants=merchants,exhaustive=False)
-    except Exception:return jsonify(ok=False,error='Kapsama bilgisi alinamadi'),503
+    except Exception as error:return database_failure('coverage',error,'Kapsama bilgisi alinamadi')

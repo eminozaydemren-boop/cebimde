@@ -9,6 +9,10 @@ from watch_store import db
 brochure_api=Blueprint('brochure_api',__name__,url_prefix='/api/brochures')
 
 def initialize(conn):
+    # DDL (especially ALTER TABLE) can deadlock when concurrent requests
+    # upgrade their table locks. Take one transaction lock before any DDL;
+    # all brochure readers/writers use this same entry point.
+    conn.execute('SELECT pg_advisory_xact_lock(726194031)')
     conn.execute('''CREATE TABLE IF NOT EXISTS brochure_cards (
       id TEXT PRIMARY KEY, data JSONB NOT NULL, expires_on DATE NOT NULL,
       imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
