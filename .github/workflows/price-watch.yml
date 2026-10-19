@@ -73,7 +73,7 @@ jobs:
     if: github.repository == 'eminozaydemren-boop/cebimde' && github.event.repository.private == false
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 2
       matrix:
         worker: [1, 2, 3, 4]
     runs-on: ubuntu-latest
